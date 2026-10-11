@@ -35,7 +35,7 @@ function clampValue(control: ControlSpec, value: number): number {
     const { min, max } = control.options;
     return Math.min(max, Math.max(min, Math.round(value)));
   }
-  if (control.type === 'color') return Math.max(0, Math.min(0xffffff, Math.round(value)));
+  if (control.type === 'color') return Math.max(0, Math.min(0xffff, Math.round(value)));
   return Math.round(value) >>> 0;
 }
 
@@ -155,6 +155,13 @@ const LAST_DEVICE_KEY = 'keydriver.lastDevice';
 /** 按运行环境选默认传输：Tauri → 原生桥；有 WebHID → WebHID；测试/兜底 → Dummy。 */
 function defaultTransportKind(): TransportKind {
   if (typeof window === 'undefined') return 'dummy';
+  // 测试/自动化逃生门：?transport=dummy|webhid|nodehid 强制指定（UI 不暴露入口）
+  try {
+    const forced = new URLSearchParams(window.location.search).get('transport');
+    if (forced === 'dummy' || forced === 'webhid' || forced === 'nodehid') return forced;
+  } catch {
+    // URL 解析失败按环境默认
+  }
   if ('__TAURI_INTERNALS__' in window) return 'nodehid';
   if (typeof navigator !== 'undefined' && 'hid' in navigator) return 'webhid';
   return 'dummy';

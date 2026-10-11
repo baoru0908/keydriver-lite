@@ -99,7 +99,7 @@ describe('MenuFlattener · 目标定义文件', () => {
     const ranges = definition.controls.filter((c) => c.type === 'range');
     expect(ranges.every((c) => c.widthHint === (c.options.kind === 'range' && c.options.max > 255 ? 2 : 1))).toBe(true);
     expect(definition.controls.filter((c) => c.type === 'keycode').every((c) => c.widthHint === 2)).toBe(true);
-    expect(definition.controls.filter((c) => c.type === 'color').every((c) => c.widthHint === 3)).toBe(true);
+    expect(definition.controls.filter((c) => c.type === 'color').every((c) => c.widthHint === 2)).toBe(true);
     expect(definition.controls.filter((c) => c.type === 'toggle').every((c) => c.widthHint === 1)).toBe(true);
   });
 

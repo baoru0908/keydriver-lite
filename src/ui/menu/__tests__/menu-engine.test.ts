@@ -33,7 +33,8 @@ function probeValueOf(control: ControlSpec): number {
   }
   switch (control.type) {
     case 'color':
-      return 0x123456;
+      // [hue, sat] 16 位语义（QMK RGB Matrix，VIA 官方一致）：探针取 16 位中段避免 0 值歧义
+      return 0x1234;
     case 'keycode':
       return 0x0028;
     case 'toggle':

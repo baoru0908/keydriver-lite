@@ -1,7 +1,6 @@
 // KeyDriver Lite 桌面外壳入口（阶段 B）：注册 hidapi 原生 HID 桥 commands。
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod drag;
 mod hid;
 
 fn main() {
@@ -14,8 +13,6 @@ fn main() {
             hid::hid_feature_get,
             hid::hid_feature_send,
             hid::debug_note,
-            drag::slider_drag_begin,
-            drag::slider_drag_end,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

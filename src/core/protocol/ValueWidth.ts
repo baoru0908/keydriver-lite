@@ -75,7 +75,7 @@ export function clearOverrides(): void {
 /**
  * 推断控件值的字节宽度（架构 §8.3 的权威规则）：
  *  1) 显式覆盖优先（先按地址键，再按 valueKey）
- *  2) keycode=2 / color=3 / toggle=1 / button=1
+ *  2) keycode=2 / color=2 / toggle=1 / button=1
  *  3) range、dropdown 按上限判定：> 255 → 2 字节
  */
 export function inferWidth(control: ControlSpec, overrides: WidthOverrides = loadOverrides()): number {
@@ -88,7 +88,8 @@ export function inferWidth(control: ControlSpec, overrides: WidthOverrides = loa
     case 'keycode':
       return 2;
     case 'color':
-      return 3;
+      // QMK RGB Matrix 语义（VIA 官方一致）：color = [hue, sat] 两个字节
+      return 2;
     case 'toggle':
       return 1;
     case 'button':

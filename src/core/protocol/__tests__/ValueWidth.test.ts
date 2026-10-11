@@ -23,7 +23,7 @@ describe('ValueWidth · 按类型推断', () => {
   });
 
   it('color 恒 3 字节', () => {
-    expect(inferWidth(control({ type: 'color', options: { kind: 'none' } }), {})).toBe(3);
+    expect(inferWidth(control({ type: 'color', options: { kind: 'none' } }), {})).toBe(2);
   });
 
   it('toggle / button 恒 1 字节', () => {

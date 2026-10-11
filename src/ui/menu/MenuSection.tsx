@@ -111,8 +111,10 @@ function ControlRow({ control, disabled, unavailable }: ControlRowProps): React.
         {control.label || control.valueKey}
       </span>
       {unavailable ? <span className="text-[10px] text-fg-dim">{UNAVAILABLE_HINT}</span> : null}
-      {/* disabled（真禁用）+ pointer-events-none（鼠标事件兜底）：置灰控件绝不写入 */}
-      <div className={disabled ? 'pointer-events-none' : undefined}>
+      {/* disabled（真禁用）+ pointer-events-none（鼠标事件兜底）：置灰控件绝不写入。
+          min-w-0 flex-1：控件区撑满标签之外的全部宽度——不给宽度的话 RangeControl
+          的 w-full 会循环塌陷（shrink-to-fit 套 w-full），滑块轨道分到 0px（真机实证）。 */}
+      <div className={cn('min-w-0 flex-1', disabled ? 'pointer-events-none' : undefined)}>
         <ControlRenderer control={control} disabled={disabled} />
       </div>
     </div>

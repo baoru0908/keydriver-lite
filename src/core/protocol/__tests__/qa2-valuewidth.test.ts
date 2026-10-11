@@ -155,7 +155,7 @@ describe('QA2-1 值宽度推断与 min 解耦（真实定义文件）', () => {
       widthHint: 0,
     };
     expect(inferWidth({ ...base, type: 'keycode' }, {})).toBe(2);
-    expect(inferWidth({ ...base, type: 'color' }, {})).toBe(3);
+    expect(inferWidth({ ...base, type: 'color' }, {})).toBe(2);
     expect(inferWidth({ ...base, type: 'toggle' }, {})).toBe(1);
     expect(inferWidth({ ...base, type: 'button' }, {})).toBe(1);
   });

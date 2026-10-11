@@ -112,7 +112,7 @@ describe('QA · 定义解析基线（目标定义文件）', () => {
     expect(drifted.map((c) => `${c.id}:${c.widthHint}≠${inferWidth(c, {})}`)).toEqual([]);
   });
 
-  it('按类型的宽度基线：keycode=2 / color=3 / toggle=1 / button=1', () => {
+  it('按类型的宽度基线：keycode=2 / color=2 / toggle=1 / button=1', () => {
     const widths = new Map<string, Set<number>>();
     for (const c of def.controls) {
       const set = widths.get(c.type) ?? new Set<number>();
@@ -120,7 +120,7 @@ describe('QA · 定义解析基线（目标定义文件）', () => {
       widths.set(c.type, set);
     }
     expect([...(widths.get('keycode') ?? [])]).toEqual([2]);
-    expect([...(widths.get('color') ?? [])]).toEqual([3]);
+    expect([...(widths.get('color') ?? [])]).toEqual([2]);
     expect([...(widths.get('toggle') ?? [])]).toEqual([1]);
     expect([...(widths.get('button') ?? [])]).toEqual([1]);
   });

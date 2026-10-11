@@ -337,7 +337,8 @@ export function defaultValueOf(control: ControlSpec): number {
   }
   switch (control.type) {
     case 'color':
-      return 0x808080;
+      // [hue, sat] 16 位（QMK RGB Matrix 语义，VIA 官方一致）
+      return 0x8080;
     case 'toggle':
       return 0;
     case 'keycode':

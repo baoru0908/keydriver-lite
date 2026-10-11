@@ -61,6 +61,9 @@ export interface AppShellProps {
   readonly onImportDefinition: () => void;
 }
 
+/** autoReconnect 只跑一次的标记（模块级，StrictMode 双挂载防护）。 */
+let autoReconnectStarted = false;
+
 export function AppShell({ onImportDefinition }: AppShellProps): React.JSX.Element {
   const currentPanel = useUiStore((s) => s.currentPanel);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
@@ -80,8 +83,11 @@ export function AppShell({ onImportDefinition }: AppShellProps): React.JSX.Eleme
     prevNarrow.current = narrow;
   });
 
-  // 启动自动重连：曾连接过的设备在列表里出现即静默重连（模块级标记防 StrictMode 双跑）。
+  // 启动自动重连：曾连接过的设备在列表里出现即静默重连。
+  // 模块级标记防 StrictMode 双跑（双重 connect 会互相踢掉 facade，表现为「假连接」）。
   useEffect(() => {
+    if (autoReconnectStarted) return;
+    autoReconnectStarted = true;
     void useDeviceStore.getState().autoReconnect();
   }, []);
 

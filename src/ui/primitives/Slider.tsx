@@ -1,52 +1,9 @@
-// 滑块：自研拖拽实现。
-// 事件选型（真机帧日志实证的 WKWebView 坑）：
-//   · Radix Slider（pointer capture）→ onValueChange 从不触发，弃用；
-//   · window 级 pointermove → 拖动期间不派发（点击可跳值、拖动不跟手），不可用；
-//   · window 级 mousemove/mouseup（触摸走 touchmove/touchend）→ 连续派发 ✓，
-//     与真机验证过的 react-colorful useDrag 同款（其源码即绑 mouse 事件而非 pointer 事件）。
-import { useCallback, useRef } from 'react';
+// 滑块：原生 <input type="range">，与原版 VIA 的 accent-range 同款方案
+// （styled input.attrs({type:'range'}) + accent-color，零 JS 拖拽代码）。
+// 原因：本环境 WKWebView 拖动期间 mousemove/pointermove 派发不可靠（真机帧日志实证），
+// 自研拖拽（Radix capture / window pointermove / window mousemove）全部只有 click 级；
+// 原生 range 的拖拽由 WebKit 内部实现，不依赖 JS 事件派发，改值经 onChange 提交。
 import { cn } from '@/shared/cn';
-import { note } from '@/shared/note';
-
-// —— 原生拖拽兜底通道 ——
-// 本环境 WKWebView 拖动期间不派发 mousemove/pointermove（真机帧日志实证），
-// JS 事件全部失效时由 Rust 轮询 NSEvent.mouseLocation 推送 slider://drag 屏幕坐标。
-// clientX = x − window.screenX（X 轴两侧方向一致，points 与 CSS px 同单位）。
-let activeDragHandler: ((clientX: number) => void) | null = null;
-let nativeUnlisten: (() => void) | null = null;
-
-async function beginNativeDrag(onClientX: (clientX: number) => void): Promise<void> {
-  if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
-  activeDragHandler = onClientX;
-  if (nativeUnlisten !== null) return;
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    const { listen } = await import('@tauri-apps/api/event');
-    await invoke('slider_drag_begin');
-    nativeUnlisten = await listen<number>('slider://drag', (event) => {
-      const clientX = event.payload - window.screenX;
-      activeDragHandler?.(clientX);
-    });
-  } catch {
-    // 原生通道失败则退化为纯 mousemove 路径
-  }
-}
-
-function endNativeDrag(): void {
-  activeDragHandler = null;
-  if (nativeUnlisten !== null) {
-    nativeUnlisten();
-    nativeUnlisten = null;
-  }
-  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-    void import('@tauri-apps/api/core').then(({ invoke }) => invoke('slider_drag_end').catch(() => undefined));
-  }
-}
-
-// 窗口失焦（Alt-Tab 等）时强制结束拖拽，防拖拽态泄漏
-if (typeof window !== 'undefined') {
-  window.addEventListener('blur', () => endNativeDrag());
-}
 
 export interface SliderProps {
   readonly value: number;
@@ -58,13 +15,6 @@ export interface SliderProps {
   readonly ariaLabel?: string;
 }
 
-/** 按步进取整并夹紧到 [min, max]，消除浮点噪声（导出供单测）。 */
-export function clampStepValue(v: number, min: number, max: number, step: number): number {
-  const stepped = Math.round((v - min) / step) * step + min;
-  const fixed = Number(stepped.toFixed(6));
-  return Math.min(max, Math.max(min, fixed));
-}
-
 export function Slider({
   value,
   min,
@@ -74,136 +24,21 @@ export function Slider({
   onChange,
   ariaLabel,
 }: SliderProps): React.JSX.Element {
-  const trackRef = useRef<HTMLDivElement | null>(null);
-  const draggingRef = useRef(false);
-  // value/min/max/step 来自受控 props，拖拽期间父组件会异步回写；
-  // 用 ref 闭包避免 window 监听器反复解绑/重绑。
-  const latestRef = useRef({ value, min, max, step, disabled });
-  latestRef.current = { value, min, max, step, disabled };
-
-  const valueFromClientX = useCallback((clientX: number): number => {
-    const el = trackRef.current;
-    const cfg = latestRef.current;
-    if (el === null) return cfg.value;
-    const rect = el.getBoundingClientRect();
-    if (rect.width === 0) return cfg.value;
-    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    return clampStepValue(cfg.min + ratio * (cfg.max - cfg.min), cfg.min, cfg.max, cfg.step);
-  }, []);
-
-  const onMouseDown = (e: React.MouseEvent<HTMLDivElement>): void => {
-    const cfg = latestRef.current;
-    if (cfg.disabled || e.button !== 0) return;
-    e.preventDefault();
-    draggingRef.current = true;
-    onChange(valueFromClientX(e.clientX));
-    let lastNoteAt = 0;
-    const move = (ev: MouseEvent): void => {
-      if (!draggingRef.current) return;
-      if (ev.buttons === 0) {
-        stop();
-        return;
-      }
-      ev.preventDefault();
-      onChange(valueFromClientX(ev.clientX));
-      // 诊断：拖动期间 mousemove 是否派发/节流（100ms 采样）
-      const now = Date.now();
-      if (now - lastNoteAt > 100) {
-        lastNoteAt = now;
-        void note(`slider-move clientX=${ev.clientX} buttons=${ev.buttons}`);
-      }
-    };
-    const stop = (): void => {
-      draggingRef.current = false;
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', stop);
-      endNativeDrag();
-      void note('slider-up');
-    };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', stop);
-    void note(`slider-down clientX=${e.clientX} value=${cfg.value}`);
-    // 原生轮询兜底：mousemove 派发不可靠，坐标推送恒可用；双通道算出同一值，互不冲突
-    void beginNativeDrag((clientX) => onChange(valueFromClientX(clientX)));
-  };
-
-  /** 触摸路径：与 react-colorful 同款（touchmove + touches[0]），preventDefault 防页面滚动。 */
-  const onTouchStart = (e: React.TouchEvent<HTMLDivElement>): void => {
-    const cfg = latestRef.current;
-    if (cfg.disabled || e.touches.length === 0) return;
-    e.preventDefault();
-    draggingRef.current = true;
-    const touch = e.touches[0];
-    if (touch) onChange(valueFromClientX(touch.clientX));
-    const move = (ev: TouchEvent): void => {
-      if (!draggingRef.current || ev.touches.length === 0) return;
-      ev.preventDefault();
-      const t = ev.touches[0];
-      if (t) onChange(valueFromClientX(t.clientX));
-    };
-    const stop = (): void => {
-      draggingRef.current = false;
-      window.removeEventListener('touchmove', move);
-      window.removeEventListener('touchend', stop);
-      window.removeEventListener('touchcancel', stop);
-    };
-    window.addEventListener('touchmove', move, { passive: false });
-    window.addEventListener('touchend', stop);
-    window.addEventListener('touchcancel', stop);
-  };
-
-  /** 键盘微调：方向键 ±step，PageUp/Down ±1/10 量程，Home/End 到边界。 */
-  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
-    const cfg = latestRef.current;
-    if (cfg.disabled) return;
-    const big = Math.max(cfg.step, Math.round((cfg.max - cfg.min) / 10));
-    const table: Record<string, number> = {
-      ArrowRight: cfg.value + cfg.step,
-      ArrowUp: cfg.value + cfg.step,
-      ArrowLeft: cfg.value - cfg.step,
-      ArrowDown: cfg.value - cfg.step,
-      PageUp: cfg.value + big,
-      PageDown: cfg.value - big,
-      Home: cfg.min,
-      End: cfg.max,
-    };
-    const next = table[e.key];
-    if (next === undefined) return;
-    e.preventDefault();
-    onChange(clampStepValue(next, cfg.min, cfg.max, cfg.step));
-  };
-
-  const percent = max === min ? 0 : ((value - min) / (max - min)) * 100;
-
   return (
     <div className="flex items-center gap-2">
-      <div
-        ref={trackRef}
-        role="slider"
-        tabIndex={disabled ? -1 : 0}
+      <input
+        type="range"
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        disabled={disabled}
         aria-label={ariaLabel}
-        aria-valuemin={min}
-        aria-valuemax={max}
-        aria-valuenow={value}
-        aria-disabled={disabled}
-        onMouseDown={onMouseDown}
-        onTouchStart={onTouchStart}
-        onKeyDown={onKeyDown}
+        onChange={(e) => onChange(Number(e.currentTarget.value))}
         className={cn(
-          'group relative flex h-7 min-w-0 flex-1 touch-none items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent',
-          disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
+          'h-7 min-w-0 flex-1 cursor-pointer accent-accent disabled:cursor-not-allowed disabled:opacity-50',
         )}
-      >
-        {/* 轨道：h-2 可视，上下留热区（容器 h-7）——回应「滑动区域不明确」 */}
-        <div className="relative h-2 w-full overflow-hidden rounded-full bg-border">
-          <div className="absolute inset-y-0 left-0 rounded-full bg-accent" style={{ width: `${percent}%` }} />
-        </div>
-        {/* 拇指：跟随百分比，hover/聚焦放大提示可拖拽 */}
-        <div
-          className="pointer-events-none absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-accent bg-surface shadow-e2 transition-transform group-hover:scale-110"
-          style={{ left: `${percent}%` }}
-        />
-      </div>
+      />
       <span className="w-12 shrink-0 text-right font-mono text-xs tabular-nums text-fg-muted">{value}</span>
     </div>
   );
