@@ -35,7 +35,8 @@ export function Switch({
       <SwitchPrimitive.Thumb
         className={cn(
           'block h-3 w-3 translate-x-0.5 rounded-full bg-fg shadow-e1',
-          'transition-transform duration-base ease-standard',
+          /* 弹性曲线：拨动时轻微过冲再回弹，手感比线性更「有实体」 */
+          'transition-transform duration-base ease-spring',
           'data-[state=checked]:translate-x-4.5 data-[state=checked]:bg-bg',
         )}
       />

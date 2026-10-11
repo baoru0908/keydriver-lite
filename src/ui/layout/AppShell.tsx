@@ -115,24 +115,28 @@ export function AppShell({ onImportDefinition }: AppShellProps): React.JSX.Eleme
   }, []);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-bg text-fg">
+    <div className="flex h-full min-h-0 animate-fade flex-col bg-bg text-fg">
+      {/* 首屏淡入：遮掉首帧样式落位过程，避免「白闪 + 元素跳位」 */}
       <TopBar onImportDefinition={onImportDefinition} />
       <div className="relative flex min-h-0 flex-1">
         {sidebarOpen ? <SideNav compact={narrow} /> : null}
         <main className="min-w-0 flex-1 overflow-auto p-4">
           <Suspense fallback={<PanelFallback />}>
-            {currentPanel === 'keymap' ? <KeymapPanel /> : null}
-            {currentPanel === 'layout' ? <LayoutOptionsBar full /> : null}
-            {currentPanel === 'debug' ? <DebugPanel embedded /> : null}
-            {currentPanel === 'menu' ? <MenuPane /> : null}
-            {currentPanel === 'backup' ? (
-              <div className="flex flex-col gap-3">
-                <BackupPanel />
-                <DefinitionDropzone />
-              </div>
-            ) : null}
-            {currentPanel === 'device' ? <DevicePanel /> : null}
-            {currentPanel === 'macros' ? <MacrosPanel /> : null}
+            {/* key 随面板变化 → 重新挂载并播放入场动画，切面板不再「硬闪」 */}
+            <div key={currentPanel} className="animate-fade-up">
+              {currentPanel === 'keymap' ? <KeymapPanel /> : null}
+              {currentPanel === 'layout' ? <LayoutOptionsBar full /> : null}
+              {currentPanel === 'debug' ? <DebugPanel embedded /> : null}
+              {currentPanel === 'menu' ? <MenuPane /> : null}
+              {currentPanel === 'backup' ? (
+                <div className="flex flex-col gap-3">
+                  <BackupPanel />
+                  <DefinitionDropzone />
+                </div>
+              ) : null}
+              {currentPanel === 'device' ? <DevicePanel /> : null}
+              {currentPanel === 'macros' ? <MacrosPanel /> : null}
+            </div>
           </Suspense>
 
           {/* T06-1：窄窗且面板折叠时给一个展开入口（浮在工作区右上，不挤压内容） */}

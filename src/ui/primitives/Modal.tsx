@@ -25,9 +25,9 @@ export function Modal({
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-bg/60 backdrop-blur-[var(--blur-overlay)] data-[state=open]:animate-fade" />
+        <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-bg/60 backdrop-blur-[var(--blur-overlay)] data-[state=open]:animate-fade data-[state=closed]:animate-fade-out" />
         <DialogPrimitive.Content
-          className={`fixed left-1/2 top-1/2 z-50 w-[92vw] ${width} -translate-x-1/2 -translate-y-1/2 rounded-card border border-border bg-surface p-4 shadow-e4 data-[state=open]:animate-scale`}
+          className={`fixed left-1/2 top-1/2 z-50 w-[92vw] ${width} -translate-x-1/2 -translate-y-1/2 rounded-card border border-border bg-surface p-4 shadow-e4 data-[state=open]:animate-scale data-[state=closed]:animate-scale-out`}
         >
           <div className="mb-3 flex items-start gap-2">
             <div className="min-w-0 flex-1">

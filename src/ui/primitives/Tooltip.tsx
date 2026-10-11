@@ -17,10 +17,10 @@ export function Tooltip({ label, children, side = 'bottom' }: TooltipProps): Rea
           <TooltipPrimitive.Content
             side={side}
             sideOffset={6}
-            className="z-50 rounded bg-elevated px-2 py-1 text-caption text-fg shadow-e3"
+            className="glass-panel z-50 rounded-sm px-2 py-1 text-caption text-fg data-[state=delayed-open]:animate-pop data-[state=instant-open]:animate-pop data-[state=closed]:animate-pop-out"
           >
             {label}
-            <TooltipPrimitive.Arrow className="fill-elevated" />
+            <TooltipPrimitive.Arrow className="fill-[var(--color-glass-bg-strong)]" />
           </TooltipPrimitive.Content>
         </TooltipPrimitive.Portal>
       </TooltipPrimitive.Root>

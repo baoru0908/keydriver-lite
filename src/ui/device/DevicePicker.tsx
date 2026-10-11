@@ -234,30 +234,33 @@ export function DevicePicker({ open, onOpenChange }: DevicePickerProps): React.J
                   : '没有检测到可控制的键盘。请先点上方「授权键盘…」；若列表仍为空，可关闭顶部过滤开关，或用「授权：显示全部 HID 设备」按钮。'}
             </p>
           ) : (
-            devices.map((device) => {
-              const active = device.id === selectedDeviceId && connected;
-              return (
-                <button
-                  key={device.id}
-                  type="button"
-                  className={cn(
-                    'flex w-full items-center gap-3 rounded-card border px-3 py-2 text-left transition-colors',
-                    active ? 'border-accent bg-accent-soft' : 'border-border bg-elevated hover:border-border-strong',
-                  )}
-                  onClick={() => void doConnect(device.id)}
-                >
-                  <Usb size={16} className={active ? 'text-accent' : 'text-fg-dim'} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-xs text-fg">{device.productName}</div>
-                    <div className="font-mono text-[11px] text-fg-dim">
-                      VID 0x{device.vendorId.toString(16).toUpperCase().padStart(4, '0')} · PID 0x
-                      {device.productId.toString(16).toUpperCase().padStart(4, '0')} · {device.kind}
+            /* 错峰入场：列表出现时依次浮现，第 8 项起封顶——长列表不拖尾 */
+            <div className="kd-stagger flex flex-col gap-2">
+            {devices.map((device) => {
+                const active = device.id === selectedDeviceId && connected;
+                return (
+                  <button
+                    key={device.id}
+                    type="button"
+                    className={cn(
+                      'flex w-full items-center gap-3 rounded-card border px-3 py-2 text-left transition-colors',
+                      active ? 'border-accent bg-accent-soft' : 'border-border bg-elevated hover:border-border-strong',
+                    )}
+                    onClick={() => void doConnect(device.id)}
+                  >
+                    <Usb size={16} className={active ? 'text-accent' : 'text-fg-dim'} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs text-fg">{device.productName}</div>
+                      <div className="font-mono text-[11px] text-fg-dim">
+                        VID 0x{device.vendorId.toString(16).toUpperCase().padStart(4, '0')} · PID 0x
+                        {device.productId.toString(16).toUpperCase().padStart(4, '0')} · {device.kind}
+                      </div>
                     </div>
-                  </div>
-                  <Link2 size={14} className={active ? 'text-accent' : 'text-fg-dim'} />
-                </button>
-              );
-            })
+                    <Link2 size={14} className={active ? 'text-accent' : 'text-fg-dim'} />
+                  </button>
+                );
+            })}
+            </div>
           )}
           <div className="mt-1 flex justify-end">
             <Button variant="ghost" size="sm" disabled={busy} onClick={() => void refreshDevices()}>

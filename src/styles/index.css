@@ -85,11 +85,17 @@
   --radius-key: 5px;
 
   /* —— 动效令牌（T03-2）—— */
+  --duration-xs: 90ms;
   --duration-fast: 120ms;
   --duration-base: 200ms;
   --duration-slow: 320ms;
+  --duration-slower: 480ms;
+  /* 语义缓动三件套：进场减速（飞入停稳）/ 退场加速（利落离场）/ 弹性（微过冲回弹） */
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-emphasized: cubic-bezier(0.3, 0, 0, 1);
+  --ease-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --ease-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
   /* 减动开关：1 表示允许动效；实际降级由 @media (prefers-reduced-motion) 控制 */
   --motion-reduce: 1;
 }
@@ -223,10 +229,17 @@ html.theme-aurora {
   }
 }
 
-/* ════════════════════════════════════════════════════════════════════════
- * T03-2 零成本动效体系：关键帧 + 工具类（纯 CSS，零 JS 依赖）。
- * 时长/缓动用上面的 motion 令牌；实际降级见文末 prefers-reduced-motion。
- * ════════════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════════
+ * 动效体系：关键帧 + 工具类（纯 CSS，零 JS 依赖）。
+ *
+ * 三条纪律（动效宪法）：
+ *  1) 只动合成属性 opacity / transform（必要时的 filter），不触发重排；
+ *  2) 进场用 --ease-decelerate「飞入停稳」，退场用 --ease-accelerate「利落离场」；
+ *     此前只有进场无退场，关闭弹窗 / Toast 是硬切——这是「不够优雅」的主因；
+ *  3) 装饰动画在 prefers-reduced-motion 下归零，信息性动画（加载 / 进行中）降速保留。
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 进场 ───────────────────────────────────────────────────────────── */
 @keyframes kd-fade {
   from {
     opacity: 0;
@@ -236,17 +249,62 @@ html.theme-aurora {
   }
 }
 
-@keyframes kd-slide {
+@keyframes kd-fade-out {
   from {
-    opacity: 0;
-    transform: translateY(8px);
+    opacity: 1;
   }
   to {
-    opacity: 1;
-    transform: translateY(0);
+    opacity: 0;
   }
 }
 
+/** 上浮 6px 入场：面板 / Toast / 列表的主旋律，比纯淡入更有「到位感」。 */
+@keyframes kd-fade-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes kd-fade-down {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes kd-fade-out-down {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+}
+
+/** 抽屉 / 侧栏：横向滑入。 */
+@keyframes kd-slide-right {
+  from {
+    opacity: 0;
+    transform: translate3d(-12px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/** 缩放：弹窗类。 */
 @keyframes kd-scale {
   from {
     opacity: 0;
@@ -258,16 +316,209 @@ html.theme-aurora {
   }
 }
 
-@utility animate-fade {
-  animation: kd-fade var(--duration-base) var(--ease-standard) both;
+@keyframes kd-scale-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
 }
 
+/** 浮层（下拉 / 气泡）：从触发点「长出来」，比纯 scale 更贴附、更有因果感。 */
+@keyframes kd-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translate3d(0, -4px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+}
+
+@keyframes kd-pop-out {
+  from {
+    opacity: 1;
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.97) translate3d(0, -2px, 0);
+  }
+}
+
+/* ── 状态 / 循环 ───────────────────────────────────────────────────── */
+/** 呼吸：连接中 / 录制中等「进行中」语义，柔和、无噪点。 */
+@keyframes kd-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/** 光晕脉冲：强调当前焦点（等待用户操作的区块）。 */
+@keyframes kd-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--color-glow-accent);
+  }
+  50% {
+    box-shadow: 0 0 12px 2px var(--color-glow-accent);
+  }
+}
+
+/** 校验失败抖动：±3px、一个来回即停，克制不烦躁。 */
+@keyframes kd-shake {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  25% {
+    transform: translate3d(-3px, 0, 0);
+  }
+  75% {
+    transform: translate3d(3px, 0, 0);
+  }
+}
+
+/** 不确定进度：高光在条内循环扫过。 */
+@keyframes kd-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(340%);
+  }
+}
+
+/* ── 工具类 ────────────────────────────────────────────────────────── */
+@utility animate-fade {
+  animation: kd-fade var(--duration-base) var(--ease-decelerate) both;
+}
+
+@utility animate-fade-out {
+  animation: kd-fade-out var(--duration-fast) var(--ease-accelerate) both;
+}
+
+/** 语义即「上浮入场」：Toast / 列表项默认用它（旧名保留，避免调用点全改）。 */
 @utility animate-slide {
-  animation: kd-slide var(--duration-base) var(--ease-standard) both;
+  animation: kd-fade-up var(--duration-base) var(--ease-decelerate) both;
+}
+
+@utility animate-slide-out {
+  animation: kd-fade-out-down var(--duration-fast) var(--ease-accelerate) both;
+}
+
+@utility animate-fade-up {
+  animation: kd-fade-up var(--duration-slow) var(--ease-decelerate) both;
+}
+
+@utility animate-fade-down {
+  animation: kd-fade-down var(--duration-slow) var(--ease-decelerate) both;
+}
+
+@utility animate-slide-right {
+  animation: kd-slide-right var(--duration-slow) var(--ease-decelerate) both;
 }
 
 @utility animate-scale {
   animation: kd-scale var(--duration-slow) var(--ease-emphasized) both;
+}
+
+@utility animate-scale-out {
+  animation: kd-scale-out var(--duration-fast) var(--ease-accelerate) both;
+}
+
+@utility animate-pop {
+  animation: kd-pop var(--duration-base) var(--ease-emphasized) both;
+}
+
+@utility animate-pop-out {
+  animation: kd-pop-out var(--duration-fast) var(--ease-accelerate) both;
+}
+
+@utility animate-breathe {
+  animation: kd-breathe 1.8s var(--ease-standard) infinite;
+}
+
+@utility animate-glow {
+  animation: kd-glow 2.4s var(--ease-standard) infinite;
+}
+
+@utility animate-shake {
+  animation: kd-shake var(--duration-slower) var(--ease-standard) both;
+}
+
+@utility animate-indeterminate {
+  animation: kd-indeterminate 1.4s var(--ease-standard) infinite;
+}
+
+/** 列表错峰入场：子元素依次浮现，长列表不拖尾（第 8 项起统一封顶）。
+ *  可用 --kd-stagger 调节步进（默认 40ms）。 */
+@utility kd-stagger {
+  & > * {
+    animation: kd-fade-up var(--duration-slow) var(--ease-decelerate) both;
+  }
+  & > *:nth-child(2) {
+    animation-delay: calc(var(--kd-stagger, 40ms) * 1);
+  }
+  & > *:nth-child(3) {
+    animation-delay: calc(var(--kd-stagger, 40ms) * 2);
+  }
+  & > *:nth-child(4) {
+    animation-delay: calc(var(--kd-stagger, 40ms) * 3);
+  }
+  & > *:nth-child(5) {
+    animation-delay: calc(var(--kd-stagger, 40ms) * 4);
+  }
+  & > *:nth-child(6) {
+    animation-delay: calc(var(--kd-stagger, 40ms) * 5);
+  }
+  & > *:nth-child(7) {
+    animation-delay: calc(var(--kd-stagger, 40ms) * 6);
+  }
+  & > *:nth-child(n + 8) {
+    animation-delay: calc(var(--kd-stagger, 40ms) * 7);
+  }
+}
+
+/** 光晕层（性能向）：把 hover 阴影画在伪元素上、只过渡 opacity。
+ *  避免逐帧重绘 box-shadow——大列表 hover 时这点差异很明显。 */
+@utility glow-hover {
+  position: relative;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: var(--shadow-glow);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--duration-base) var(--ease-standard);
+  }
+
+  &:hover::after,
+  &:focus-within::after {
+    opacity: 1;
+  }
+}
+
+/** 焦点环：outline 过渡——不占布局、不触发重排，且始终可访问。 */
+@utility focus-ring {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition: outline-color var(--duration-fast) var(--ease-standard);
+
+  &:focus-visible {
+    outline-color: var(--color-accent);
+  }
 }
 
 /* 键帽渐变的通用 class：按 tone 分档（架构 §8.6 三档映射） */
@@ -389,7 +640,8 @@ html.theme-anim *::after {
     box-shadow:
       0 0 0 3px var(--color-glow-accent),
       inset 0 1px 0 var(--color-hairline);
-    transition: transform var(--duration-fast) var(--ease-standard);
+    /* 弹性：拇指 hover 放大 / 按下微缩都有轻微过冲，手感更「有实体」 */
+    transition: transform var(--duration-base) var(--ease-spring);
   }
 
   &:hover::-webkit-slider-thumb {
@@ -433,6 +685,7 @@ html.theme-anim *::after {
 
 /* 尊重系统「减少动态效果」偏好：关闭所有动效与过渡（零成本、无侵入） */
 @media (prefers-reduced-motion: reduce) {
+  /* 装饰性动效：瞬间完成（位移 / 缩放 / 淡入淡出全部取消） */
   *,
   *::before,
   *::after {
@@ -440,5 +693,16 @@ html.theme-anim *::after {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
+  }
+
+  /* 信息性动画例外：加载中 / 进行中必须让用户「看见还在跑」——
+     若一并归零则完全静止，反而伤可用性，故降速保留（1.4s 一圈，不刺眼）。 */
+  .animate-spin,
+  .animate-breathe,
+  .animate-indeterminate,
+  .skeleton-shimmer,
+  .animate-shimmer {
+    animation-duration: 1.4s !important;
+    animation-iteration-count: infinite !important;
   }
 }

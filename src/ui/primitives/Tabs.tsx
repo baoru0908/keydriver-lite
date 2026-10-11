@@ -28,7 +28,7 @@ export function TabsTrigger({ className, ...props }: ComponentProps<typeof TabsP
 export function TabsContent({ className, ...props }: ComponentProps<typeof TabsPrimitive.Content>) {
   return (
     <TabsPrimitive.Content
-      className={cn('animate-fade outline-none', className)}
+      className={cn('animate-fade-up outline-none', className)}
       {...props}
     />
   );

@@ -16,6 +16,14 @@ const cardVariants = cva('rounded-card border border-border', {
       elevated: 'bg-elevated shadow-e2 shadow-inset-hl',
       glass: 'glass-card',
       glow: 'glass-card shadow-glow',
+      /**
+       * 可交互卡片：hover 微抬升（transform，走合成层）+ 光晕由伪元素承载（只过渡 opacity）。
+       * 不用 box-shadow 过渡——那会在 hover 时逐帧重绘，列表场景肉眼可见地掉帧。
+       */
+      interactive: [
+        'bg-surface shadow-inset-hl glow-hover cursor-pointer',
+        'transition-transform duration-base ease-standard hover:-translate-y-px active:translate-y-0',
+      ].join(' '),
     },
   },
   defaultVariants: { variant: 'default' },

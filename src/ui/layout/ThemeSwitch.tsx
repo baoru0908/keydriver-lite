@@ -27,6 +27,8 @@ export function ThemeSwitch(): React.JSX.Element {
   const preference = useUiStore((s) => s.themePreference);
   const setPreference = useUiStore((s) => s.setThemePreference);
   const [open, setOpen] = useState(false);
+  /** 正在播放退场动画（此间菜单仍在 DOM 中，播完才卸载）。 */
+  const [closing, setClosing] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -38,10 +40,10 @@ export function ThemeSwitch(): React.JSX.Element {
   useEffect(() => {
     if (!open) return undefined;
     const onPointerDown = (e: PointerEvent): void => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+      if (!rootRef.current?.contains(e.target as Node)) close(false);
     };
     const onFocusOut = (e: FocusEvent): void => {
-      if (!rootRef.current?.contains(e.relatedTarget as Node)) setOpen(false);
+      if (!rootRef.current?.contains(e.relatedTarget as Node)) close(false);
     };
     document.addEventListener('pointerdown', onPointerDown);
     document.addEventListener('focusout', onFocusOut);
@@ -52,13 +54,22 @@ export function ThemeSwitch(): React.JSX.Element {
   }, [open]);
 
   const openAt = (index: number): void => {
+    setClosing(false);
     setOpen(true);
     requestAnimationFrame(() => itemRefs.current[index]?.focus());
   };
 
-  const close = (): void => {
-    setOpen(false);
-    triggerRef.current?.focus();
+  /**
+   * 退场：先播动画再卸载（与 Radix 浮层观感一致，避免「啪」地消失）。
+   * restoreFocus=false 用于「点击外部 / 焦点离开」场景——此时不该把焦点抢回触发器。
+   */
+  const close = (restoreFocus = true): void => {
+    setClosing(true);
+    window.setTimeout(() => {
+      setOpen(false);
+      setClosing(false);
+      if (restoreFocus) triggerRef.current?.focus();
+    }, 140);
   };
 
   const onTriggerKeyDown = (e: React.KeyboardEvent): void => {
@@ -113,7 +124,10 @@ export function ThemeSwitch(): React.JSX.Element {
         <div
           role="menu"
           aria-label="主题偏好"
-          className="glass-panel absolute right-0 top-full z-50 mt-1.5 w-52 rounded-lg p-1 animate-scale"
+          className={cn(
+            'glass-panel absolute right-0 top-full z-50 mt-1.5 w-52 rounded-lg p-1',
+            closing ? 'animate-pop-out pointer-events-none' : 'animate-pop',
+          )}
         >
           {OPTIONS.map((option, index) => {
             const Icon = option.icon;

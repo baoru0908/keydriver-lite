@@ -1,5 +1,7 @@
 // 轻量 Toast：成功 2s 自动消失，错误常驻可关。全局单例 store。
+// 进出场均走 CSS 动画（退场由 leaving 标记驱动，播完再卸载）。
 import { create } from 'zustand';
+import { cn } from '@/shared/cn';
 import { AlertCircle, CheckCircle2, Info, X } from 'lucide-react';
 
 export type ToastKind = 'success' | 'error' | 'info';
@@ -10,25 +12,41 @@ export interface ToastItem {
   readonly message: string;
 }
 
+/** 退场时长：与 animate-slide-out（--duration-fast 120ms）对齐并留余量。 */
+const EXIT_MS = 160;
+
 interface ToastState {
   items: readonly ToastItem[];
+  /** 正在播放退场动画的 id：播完才真正移除，避免「硬切消失」。 */
+  leaving: readonly number[];
   push: (kind: ToastKind, message: string) => void;
   dismiss: (id: number) => void;
 }
 
 let seq = 0;
 
-export const useToastStore = create<ToastState>((set) => ({
+export const useToastStore = create<ToastState>((set, get) => ({
   items: [],
+  leaving: [],
   push: (kind, message) => {
     seq += 1;
     const id = seq;
     set((s) => ({ items: [...s.items, { id, kind, message }] }));
     if (kind !== 'error') {
-      setTimeout(() => set((s) => ({ items: s.items.filter((i) => i.id !== id) })), 2000);
+      // 自动消失也走完整退场链路，观感与手动关闭一致
+      setTimeout(() => get().dismiss(id), 2000);
     }
   },
-  dismiss: (id) => set((s) => ({ items: s.items.filter((i) => i.id !== id) })),
+  dismiss: (id) => {
+    if (get().leaving.includes(id)) return;
+    set((s) => ({ leaving: [...s.leaving, id] }));
+    setTimeout(() => {
+      set((s) => ({
+        items: s.items.filter((i) => i.id !== id),
+        leaving: s.leaving.filter((l) => l !== id),
+      }));
+    }, EXIT_MS);
+  },
 }));
 
 /** 便捷函数：供非 React 模块调用。 */
@@ -46,6 +64,7 @@ const ICONS = {
 
 export function ToastHost(): React.JSX.Element {
   const items = useToastStore((s) => s.items);
+  const leaving = useToastStore((s) => s.leaving);
   const dismiss = useToastStore((s) => s.dismiss);
 
   return (
@@ -57,7 +76,10 @@ export function ToastHost(): React.JSX.Element {
         return (
           <div
             key={item.id}
-            className="glass-panel pointer-events-auto flex items-start gap-2 rounded-lg px-3 py-2 text-caption animate-slide"
+            className={cn(
+              'glass-panel pointer-events-auto flex items-start gap-2 rounded-lg px-3 py-2 text-caption',
+              leaving.includes(item.id) ? 'animate-slide-out' : 'animate-slide',
+            )}
           >
             <Icon size={14} className={`mt-0.5 shrink-0 ${color}`} />
             <span className="flex-1 text-fg">{item.message}</span>

@@ -54,7 +54,7 @@ export function Select({
         <SelectPrimitive.Content
           position="popper"
           sideOffset={4}
-          className="glass-panel z-50 max-h-64 min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-lg shadow-e3 animate-scale"
+          className="glass-panel z-50 max-h-64 min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-lg shadow-e3 data-[state=open]:animate-pop data-[state=closed]:animate-pop-out"
         >
           <SelectPrimitive.Viewport className="p-1">
             {options.map((option) => (

@@ -12,6 +12,8 @@ const buttonVariants = cva(
   [
     'relative inline-flex items-center justify-center gap-1.5 rounded-card font-medium',
     'transition-[background-color,color,box-shadow,transform,filter] duration-fast ease-standard',
+    /* 焦点环走 outline：不占布局、不触发重排，键盘导航始终可见 */
+    'focus-ring',
     'active:scale-[0.97] active:brightness-95',
     'disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none',
   ].join(' '),
