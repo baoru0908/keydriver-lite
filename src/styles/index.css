@@ -61,6 +61,29 @@
   --ring-focus: 0 0 0 2px var(--color-accent);
   --blur-overlay: 8px;
 
+  /* —— 材质层（毛玻璃 / 微边框 / 顶部高光）—— */
+  --color-glass-bg: rgb(255 255 255 / 0.045);
+  --color-glass-bg-strong: rgb(255 255 255 / 0.075);
+  --color-glass-border: rgb(255 255 255 / 0.1);
+  --color-hairline: rgb(255 255 255 / 0.07);
+  --blur-glass: 14px;
+
+  /* —— 光效（柔和发光 / 光晕）—— */
+  --color-glow-accent: rgb(77 212 192 / 0.32);
+  --color-glow-danger: rgb(255 107 107 / 0.28);
+  --shadow-glow: 0 0 0 1px var(--color-glass-border), 0 10px 28px -10px var(--color-glow-accent);
+  --shadow-glow-danger: 0 0 0 1px rgb(255 107 107 / 0.35), 0 10px 28px -10px var(--color-glow-danger);
+  /* 内侧 1px 高光：营造「通透」的关键，模拟光线从上方掠过 */
+  --shadow-inset-hl: inset 0 1px 0 0 var(--color-hairline);
+
+  /* —— 圆角标尺（4/6/8/12/16，xs→xl）—— */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-card: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-key: 5px;
+
   /* —— 动效令牌（T03-2）—— */
   --duration-fast: 120ms;
   --duration-base: 200ms;
@@ -104,6 +127,57 @@ html.theme-light {
   --shadow-e3: 0 8px 24px rgb(16 24 40 / 0.1);
   --shadow-e4: 0 16px 48px rgb(16 24 40 / 0.12);
   --ring-focus: 0 0 0 2px var(--color-accent);
+
+  /* 亮色材质：半透明白 + 冷灰描边，高光改为白色（比深色更「透」） */
+  --color-glass-bg: rgb(255 255 255 / 0.72);
+  --color-glass-bg-strong: rgb(255 255 255 / 0.86);
+  --color-glass-border: rgb(16 24 40 / 0.08);
+  --color-hairline: rgb(255 255 255 / 0.9);
+  --blur-glass: 16px;
+  --color-glow-accent: rgb(31 168 148 / 0.26);
+  --color-glow-danger: rgb(214 69 69 / 0.22);
+  --shadow-glow: 0 0 0 1px rgb(31 168 148 / 0.18), 0 10px 24px -12px var(--color-glow-accent);
+  --shadow-glow-danger: 0 0 0 1px rgb(214 69 69 / 0.2), 0 10px 24px -12px var(--color-glow-danger);
+  --shadow-inset-hl: inset 0 1px 0 0 var(--color-hairline);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+ * 主题扩展位：第三套「极光」——证明主题体系可扩展（新增主题 = 新增一组变量覆盖）。
+ * 用法：与 .theme-light 同构，只需在 useUiStore 的 ThemeMode 里加一个字面量即可接入。
+ * ════════════════════════════════════════════════════════════════════════ */
+html.theme-aurora {
+  --color-bg: #10131f;
+  --color-surface: #171b2b;
+  --color-panel: #1c2135;
+  --color-elevated: #232a42;
+  --color-border: #2e3552;
+  --color-border-strong: #3f4870;
+  --color-fg: #e8e9f5;
+  --color-fg-muted: #a2a8c8;
+  --color-fg-dim: #7a80a3;
+  --color-accent: #7c8cff;
+  --color-accent-strong: #6473f2;
+  --color-accent-soft: #222a54;
+  --color-danger: #ff7a90;
+  --color-danger-soft: #3a2030;
+  --color-warn: #ffc978;
+  --color-warn-soft: #3a3020;
+  --color-success: #56e0b0;
+  --color-success-soft: #123528;
+  --color-info: #7cc4ff;
+  --color-info-soft: #1b2c42;
+  --color-key-base: #2b3150;
+  --color-key-mod: #343c60;
+  --color-key-accent: #414b74;
+  --color-key-special: #232842;
+
+  --color-glass-bg: rgb(124 140 255 / 0.07);
+  --color-glass-bg-strong: rgb(124 140 255 / 0.11);
+  --color-glass-border: rgb(150 165 255 / 0.16);
+  --color-hairline: rgb(180 190 255 / 0.1);
+  --color-glow-accent: rgb(124 140 255 / 0.34);
+  --shadow-glow: 0 0 0 1px var(--color-glass-border), 0 10px 30px -10px var(--color-glow-accent);
+  --shadow-e3: 0 12px 34px rgb(6 8 20 / 0.45);
 }
 
 @layer base {
@@ -201,6 +275,160 @@ html.theme-light {
   box-shadow:
     inset 0 -2px 0 rgb(0 0 0 / 0.18),
     0 1px 2px rgb(0 0 0 / 0.25);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+ * 材质与光效工具类（纯 CSS，零 JS）：玻璃卡 / 微边框高光 / 发光 / 渐变面。
+ * 全部走令牌，深浅主题自动适配；backdrop-filter 仅在支持时生效（降级为实色）。
+ * ════════════════════════════════════════════════════════════════════════ */
+@utility glass-card {
+  background-color: var(--color-glass-bg);
+  border: 1px solid var(--color-glass-border);
+  box-shadow: var(--shadow-inset-hl), var(--shadow-e1);
+  backdrop-filter: blur(var(--blur-glass)) saturate(140%);
+}
+
+@utility glass-panel {
+  background-color: var(--color-glass-bg-strong);
+  border: 1px solid var(--color-glass-border);
+  box-shadow: var(--shadow-inset-hl), var(--shadow-e2);
+  backdrop-filter: blur(calc(var(--blur-glass) + 6px)) saturate(150%);
+}
+
+/** 顶部一道高光：让平面「起一层光」，是通透观感的关键细节。 */
+@utility hairline-top {
+  box-shadow: var(--shadow-inset-hl);
+}
+
+@utility glow-accent {
+  box-shadow: var(--shadow-glow);
+}
+
+@utility glow-danger {
+  box-shadow: var(--shadow-glow-danger);
+}
+
+/** 悬停浮起：微抬升 + 阴影加深，统一全站交互手感。 */
+@utility lift-hover {
+  transition-property: transform, box-shadow, background-color, border-color;
+  transition-duration: var(--duration-base);
+  transition-timing-function: var(--ease-standard);
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-e2), var(--shadow-inset-hl);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+/* —— 主题切换过渡：仅在切换瞬间挂 .theme-anim（320ms 后由 JS 摘除）。
+ * 刻意不常驻全局过渡：避免把所有 hover/动画都拖慢，保证性能。 —— */
+html.theme-anim,
+html.theme-anim *,
+html.theme-anim *::before,
+html.theme-anim *::after {
+  transition:
+    background-color var(--duration-slow) var(--ease-standard),
+    border-color var(--duration-slow) var(--ease-standard),
+    color var(--duration-slow) var(--ease-standard),
+    box-shadow var(--duration-slow) var(--ease-standard),
+    fill var(--duration-slow) var(--ease-standard) !important;
+}
+
+/* —— 骨架微光（shimmer）：比 pulse 更「高级」的加载感 —— */
+@keyframes kd-shimmer {
+  from {
+    background-position: -160% 0;
+  }
+  to {
+    background-position: 260% 0;
+  }
+}
+
+@utility skeleton-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-elevated) 0%,
+    var(--color-glass-bg-strong) 50%,
+    var(--color-elevated) 100%
+  );
+  background-size: 220% 100%;
+  animation: kd-shimmer 1.4s var(--ease-standard) infinite;
+}
+
+/* —— 原生滑块质感：轨道渐变 + 拇指发光/按压反馈（跨 WebKit / Firefox） —— */
+@utility kd-range {
+  appearance: none;
+  background: transparent;
+  height: 28px;
+
+  &::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 999px;
+    background: linear-gradient(
+      90deg,
+      var(--color-accent) 0%,
+      var(--color-accent-strong) var(--kd-range-progress, 50%),
+      var(--color-border) var(--kd-range-progress, 50%),
+      var(--color-border) 100%
+    );
+    box-shadow: var(--shadow-inset-hl);
+  }
+
+  &::-webkit-slider-thumb {
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    margin-top: -4px;
+    border-radius: 999px;
+    background: var(--color-fg);
+    border: 2px solid var(--color-accent);
+    box-shadow:
+      0 0 0 3px var(--color-glow-accent),
+      inset 0 1px 0 var(--color-hairline);
+    transition: transform var(--duration-fast) var(--ease-standard);
+  }
+
+  &:hover::-webkit-slider-thumb {
+    transform: scale(1.12);
+  }
+
+  &:active::-webkit-slider-thumb {
+    transform: scale(0.96);
+  }
+
+  &::-moz-range-track {
+    height: 6px;
+    border-radius: 999px;
+    background: var(--color-border);
+  }
+
+  &::-moz-range-progress {
+    height: 6px;
+    border-radius: 999px;
+    background: var(--color-accent);
+  }
+
+  &::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    background: var(--color-fg);
+    border: 2px solid var(--color-accent);
+    box-shadow: 0 0 0 3px var(--color-glow-accent);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+
+    &::-webkit-slider-thumb {
+      box-shadow: none;
+      border-color: var(--color-border-strong);
+    }
+  }
 }
 
 /* 尊重系统「减少动态效果」偏好：关闭所有动效与过渡（零成本、无侵入） */

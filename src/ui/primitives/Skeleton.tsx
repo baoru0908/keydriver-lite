@@ -1,8 +1,8 @@
-// 骨架屏原语（design-tokens.md §7.2）：
-// animate-pulse 占位块，圆角 radius-card、底色 elevated。
+// 骨架屏原语：
+// shimmer 微光占位（比 pulse 更贴合「玻璃质感」），圆角 radius-card。
 // 变体：text（单行 caption 行高）/ block（矩形区域）/ circle（图标位）。
-// a11y：SkeletonGroup 容器 aria-busy="true"；prefers-reduced-motion 下全局降级为静态
-//（src/styles/index.css 的 reduced-motion 块把动画时长归零，pulse 即静止）。
+// a11y：SkeletonGroup 容器 aria-busy="true" + aria-label；prefers-reduced-motion 下
+// 由全局 reduced-motion 块把动画时长归零 → 退化为静态底色（不闪）。
 import type { ReactNode } from 'react';
 import { cn } from '@/shared/cn';
 
@@ -23,7 +23,7 @@ export function Skeleton({ variant = 'block', className }: SkeletonProps): React
   return (
     <div
       aria-hidden
-      className={cn('animate-pulse rounded-card bg-elevated', VARIANT_CLASS[variant], className)}
+      className={cn('skeleton-shimmer rounded-card', VARIANT_CLASS[variant], className)}
     />
   );
 }
@@ -38,7 +38,12 @@ export interface SkeletonGroupProps {
 /** 异步加载期的骨架容器：aria-busy 明示「正在加载」。 */
 export function SkeletonGroup({ label, className, children }: SkeletonGroupProps): React.JSX.Element {
   return (
-    <div aria-busy="true" aria-label={label} className={cn('flex flex-col gap-2', className)}>
+    <div
+      role="status"
+      aria-busy="true"
+      aria-label={label ?? '加载中'}
+      className={cn('flex flex-col gap-2', className)}
+    >
       {children}
     </div>
   );

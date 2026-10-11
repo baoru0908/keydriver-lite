@@ -25,14 +25,17 @@ export function Switch({
       aria-label={ariaLabel}
       onCheckedChange={onCheckedChange}
       className={cn(
-        'relative h-4 w-8 shrink-0 rounded-full transition-colors duration-fast ease-standard active:scale-[0.97]',
-        'bg-border-strong data-[state=checked]:bg-accent',
-        disabled && 'opacity-50',
+        'relative h-4 w-8 shrink-0 rounded-full',
+        'transition-[background-color,box-shadow] duration-base ease-standard active:scale-[0.97]',
+        'bg-border-strong data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-accent data-[state=checked]:to-accent-strong',
+        'data-[state=checked]:shadow-glow',
+        'shadow-inset-hl disabled:opacity-50',
       )}
     >
       <SwitchPrimitive.Thumb
         className={cn(
-          'block h-3 w-3 translate-x-0.5 rounded-full bg-fg transition-transform duration-fast ease-standard',
+          'block h-3 w-3 translate-x-0.5 rounded-full bg-fg shadow-e1',
+          'transition-transform duration-base ease-standard',
           'data-[state=checked]:translate-x-4.5 data-[state=checked]:bg-bg',
         )}
       />

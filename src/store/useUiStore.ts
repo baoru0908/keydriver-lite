@@ -1,7 +1,13 @@
 // UI 偏好状态：主题、当前面板、侧栏折叠、色空间与值宽度/自定义键码基址等校准项（Q3/Q4/A5）。
 import { create } from 'zustand';
 
-export type ThemeMode = 'dark' | 'light';
+/** 已解析的实际主题（挂载到 <html> 的 class）。新增主题只需在 ThemeMode 加字面量 + CSS 变量覆盖。 */
+export type ThemeMode = 'dark' | 'light' | 'aurora';
+/** 用户偏好：system = 跟随系统并实时响应变化；其余为手动锁定。 */
+export type ThemePreference = 'system' | ThemeMode;
+
+/** 主题循环顺序（TopBar 切换按钮 / 快捷键共用）。 */
+const THEME_CYCLE: readonly ThemeMode[] = ['light', 'dark', 'aurora'];
 export type PanelId = 'keymap' | 'layout' | 'debug' | 'menu' | 'backup' | 'device' | 'macros';
 export type ColorSpace = 'hsv' | 'rgb' | 'grb';
 
@@ -21,7 +27,10 @@ const DEFAULT_PREFS: UiPrefs = {
 };
 
 interface UiState extends UiPrefs {
+  /** 已解析的实际主题（组件只消费它做视觉判断） */
   theme: ThemeMode;
+  /** 用户偏好（持久化）：system / light / dark / aurora */
+  themePreference: ThemePreference;
   currentPanel: PanelId;
   sidebarOpen: boolean;
   /** 右侧键码面板是否展开 */
@@ -33,7 +42,8 @@ interface UiState extends UiPrefs {
   hotkeyHelpOpen: boolean;
   /** 当前打开的自定义菜单 id（来自定义文件，零硬编码） */
   currentMenuId: string | null;
-  setTheme: (theme: ThemeMode) => void;
+  setThemePreference: (pref: ThemePreference) => void;
+  /** 在 light → dark → aurora 之间循环（手动选择，写入偏好） */
   toggleTheme: () => void;
   setCurrentPanel: (panel: PanelId) => void;
   toggleSidebar: (open?: boolean) => void;
@@ -66,28 +76,40 @@ function savePrefs(prefs: UiPrefs): void {
   }
 }
 
-/**
- * 解析初始主题（T03-3）：
- *   - 若用户曾手动选择（localStorage 有值）→ 直接采用，不再跟随系统；
- *   - 否则首次启动跟随一次系统 `prefers-color-scheme`，随后即锁定（手动选择后才改变）。
- * 在 Node / 无 localStorage 环境下安全回退到深色。
- */
-function resolveInitialTheme(): ThemeMode {
+/** 读系统偏好（无 matchMedia / 服务端渲染环境回退深色）。 */
+function systemTheme(): ThemeMode {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return 'dark';
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+/** 读取持久化的主题偏好；旧版本存的 'dark'/'light' 直接作为锁定值兼容。 */
+function loadThemePreference(): ThemePreference {
   try {
     const saved = localStorage.getItem(THEME_KEY);
-    if (saved === 'dark' || saved === 'light') return saved;
+    if (saved === 'system' || saved === 'dark' || saved === 'light' || saved === 'aurora') return saved;
   } catch {
-    // 忽略：localStorage 不可用时，跟随系统或回退深色
+    // localStorage 不可用：默认跟随系统
   }
-  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
-    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  return 'system';
+}
+
+function saveThemePreference(pref: ThemePreference): void {
+  try {
+    localStorage.setItem(THEME_KEY, pref);
+  } catch {
+    // 持久化失败只影响下次启动，不影响本次会话
   }
-  return 'dark';
+}
+
+/** 偏好 → 实际主题（system 走系统查询）。 */
+export function resolveTheme(pref: ThemePreference): ThemeMode {
+  return pref === 'system' ? systemTheme() : pref;
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
   ...loadPrefs(),
-  theme: resolveInitialTheme(),
+  themePreference: loadThemePreference(),
+  theme: resolveTheme(loadThemePreference()),
   currentPanel: 'keymap',
   sidebarOpen: true,
   keycodePanelOpen: true,
@@ -96,18 +118,17 @@ export const useUiStore = create<UiState>((set, get) => ({
   hotkeyHelpOpen: false,
   currentMenuId: null,
 
-  setTheme: (theme) => {
-    try {
-      localStorage.setItem(THEME_KEY, theme);
-    } catch {
-      // 忽略
-    }
-    document.documentElement.classList.toggle('theme-dark', theme === 'dark');
-    document.documentElement.classList.toggle('theme-light', theme === 'light');
-    set({ theme });
+  setThemePreference: (pref) => {
+    saveThemePreference(pref);
+    set({ themePreference: pref, theme: resolveTheme(pref) });
   },
 
-  toggleTheme: () => get().setTheme(get().theme === 'dark' ? 'light' : 'dark'),
+  toggleTheme: () => {
+    const current = get().theme;
+    const next = THEME_CYCLE[(THEME_CYCLE.indexOf(current) + 1) % THEME_CYCLE.length] ?? 'dark';
+    saveThemePreference(next);
+    set({ themePreference: next, theme: next });
+  },
 
   setCurrentPanel: (currentPanel) => set({ currentPanel }),
   toggleSidebar: (open) => set((s) => ({ sidebarOpen: open ?? !s.sidebarOpen })),

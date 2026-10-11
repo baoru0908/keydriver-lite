@@ -38,6 +38,7 @@ export function Select({
         aria-label={ariaLabel}
         className={cn(
           'flex h-7 w-full items-center justify-between gap-2 rounded-card border border-border bg-elevated px-2 text-xs text-fg',
+          'shadow-inset-hl transition-[border-color,box-shadow,background-color] duration-fast ease-standard',
           'hover:border-border-strong disabled:opacity-50',
           className,
         )}
@@ -53,7 +54,7 @@ export function Select({
         <SelectPrimitive.Content
           position="popper"
           sideOffset={4}
-          className="z-50 max-h-64 min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-card border border-border bg-surface shadow-e3"
+          className="glass-panel z-50 max-h-64 min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-lg shadow-e3 animate-scale"
         >
           <SelectPrimitive.Viewport className="p-1">
             {options.map((option) => (
@@ -61,9 +62,10 @@ export function Select({
                 key={option.value}
                 value={String(option.value)}
                 className={cn(
-                  'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs text-fg-muted outline-none',
+                  'flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-xs text-fg-muted outline-none',
+                  'transition-colors duration-fast ease-standard',
                   'data-[highlighted]:bg-elevated data-[highlighted]:text-fg',
-                  'data-[state=checked]:text-accent',
+                  'data-[state=checked]:bg-accent-soft data-[state=checked]:text-accent',
                 )}
               >
                 <SelectPrimitive.ItemIndicator>

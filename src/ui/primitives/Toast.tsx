@@ -57,13 +57,13 @@ export function ToastHost(): React.JSX.Element {
         return (
           <div
             key={item.id}
-            className="pointer-events-auto flex items-start gap-2 rounded-card border border-border bg-surface px-3 py-2 text-caption shadow-e2 animate-slide"
+            className="glass-panel pointer-events-auto flex items-start gap-2 rounded-lg px-3 py-2 text-caption animate-slide"
           >
             <Icon size={14} className={`mt-0.5 shrink-0 ${color}`} />
             <span className="flex-1 text-fg">{item.message}</span>
             <button
               type="button"
-              className="shrink-0 text-fg-dim hover:text-fg"
+              className="shrink-0 rounded-xs px-0.5 text-fg-dim transition-colors duration-fast ease-standard hover:text-fg"
               onClick={() => dismiss(item.id)}
               aria-label="关闭提示"
             >
