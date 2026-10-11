@@ -1,8 +1,9 @@
-// 滑块：自研指针拖拽实现。
-// 为什么不用 Radix Slider：WKWebView 的 pointer capture 拖拽有兼容性问题，
-// Radix 的 onValueChange 在 Tauri 外壳里从不触发（真机帧日志实证：拖动零 SET 帧）；
-// 而同为 window 级监听的 react-colorful 一切正常 → 采用同款已验证模式。
-// 交互设计：整条轨道都是热区（点击任意位置即跳值）、拇指放大态、键盘微调。
+// 滑块：自研拖拽实现。
+// 事件选型（真机帧日志实证的 WKWebView 坑）：
+//   · Radix Slider（pointer capture）→ onValueChange 从不触发，弃用；
+//   · window 级 pointermove → 拖动期间不派发（点击可跳值、拖动不跟手），不可用；
+//   · window 级 mousemove/mouseup（触摸走 touchmove/touchend）→ 连续派发 ✓，
+//     与真机验证过的 react-colorful useDrag 同款（其源码即绑 mouse 事件而非 pointer 事件）。
 import { useCallback, useRef } from 'react';
 import { cn } from '@/shared/cn';
 
@@ -49,24 +50,53 @@ export function Slider({
     return clampStepValue(cfg.min + ratio * (cfg.max - cfg.min), cfg.min, cfg.max, cfg.step);
   }, []);
 
-  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
+  const onMouseDown = (e: React.MouseEvent<HTMLDivElement>): void => {
     const cfg = latestRef.current;
     if (cfg.disabled || e.button !== 0) return;
     e.preventDefault();
     draggingRef.current = true;
     onChange(valueFromClientX(e.clientX));
-    const move = (ev: PointerEvent): void => {
-      if (draggingRef.current) onChange(valueFromClientX(ev.clientX));
+    const move = (ev: MouseEvent): void => {
+      if (!draggingRef.current) return;
+      if (ev.buttons === 0) {
+        stop();
+        return;
+      }
+      ev.preventDefault();
+      onChange(valueFromClientX(ev.clientX));
     };
     const stop = (): void => {
       draggingRef.current = false;
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', stop);
-      window.removeEventListener('pointercancel', stop);
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', stop);
     };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', stop);
-    window.addEventListener('pointercancel', stop);
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', stop);
+  };
+
+  /** 触摸路径：与 react-colorful 同款（touchmove + touches[0]），preventDefault 防页面滚动。 */
+  const onTouchStart = (e: React.TouchEvent<HTMLDivElement>): void => {
+    const cfg = latestRef.current;
+    if (cfg.disabled || e.touches.length === 0) return;
+    e.preventDefault();
+    draggingRef.current = true;
+    const touch = e.touches[0];
+    if (touch) onChange(valueFromClientX(touch.clientX));
+    const move = (ev: TouchEvent): void => {
+      if (!draggingRef.current || ev.touches.length === 0) return;
+      ev.preventDefault();
+      const t = ev.touches[0];
+      if (t) onChange(valueFromClientX(t.clientX));
+    };
+    const stop = (): void => {
+      draggingRef.current = false;
+      window.removeEventListener('touchmove', move);
+      window.removeEventListener('touchend', stop);
+      window.removeEventListener('touchcancel', stop);
+    };
+    window.addEventListener('touchmove', move, { passive: false });
+    window.addEventListener('touchend', stop);
+    window.addEventListener('touchcancel', stop);
   };
 
   /** 键盘微调：方向键 ±step，PageUp/Down ±1/10 量程，Home/End 到边界。 */
@@ -103,7 +133,8 @@ export function Slider({
         aria-valuemax={max}
         aria-valuenow={value}
         aria-disabled={disabled}
-        onPointerDown={onPointerDown}
+        onMouseDown={onMouseDown}
+        onTouchStart={onTouchStart}
         onKeyDown={onKeyDown}
         className={cn(
           'group relative flex h-7 min-w-0 flex-1 touch-none items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent',
