@@ -51,6 +51,15 @@ fn err(kind: &str, msg: impl Into<String>) -> String {
     format!("{kind}:{}", msg.into())
 }
 
+/// 重枚举设备列表（device_list 是缓存快照，仅 new()/refresh_devices() 时更新；
+/// HID_API 全局静态在 App 启动时创建——键盘后插就必须 refresh 才看得见）。
+/// 枚举失败按 best-effort 降级：保留旧快照继续跑，不中断调用链，仅记日志。
+fn refresh_devices_best_effort(api: &mut HidApi) {
+    if let Err(e) = api.refresh_devices() {
+        log_frame("EVT", e.to_string().as_bytes(), "refresh-devices-fail");
+    }
+}
+
 /// 帧级落盘日志（env 门控）：KEYDRIVER_HID_LOG=1 时把每次 tx/rx 追加到 /tmp/keydriver-hid.log，
 /// 用于真机定位滑块/写入链路问题。不打开关零开销。
 fn log_frame(dir: &str, bytes: &[u8], note: &str) {
@@ -88,9 +97,11 @@ pub fn debug_note(text: String) -> Result<(), String> {
 }
 
 /// 打开失败/读写失败后复查设备是否还在总线上；不在则视为断连并广播。
+/// device_list 是缓存快照，判活前必须 refresh_devices 重枚举（否则拔线永远检测不到）。
 fn emit_if_gone(app: &AppHandle, path: &str) -> bool {
     let gone = {
-        let api = HID_API.lock().expect("HID_API poisoned");
+        let mut api = HID_API.lock().expect("HID_API poisoned");
+        refresh_devices_best_effort(&mut api);
         let present = api.device_list().any(|d| d.path().to_string_lossy() == path);
         !present
     };
@@ -113,7 +124,9 @@ fn spawn_disconnect_poller(app: AppHandle, path: String) {
             return;
         }
         let present = {
-            let api = HID_API.lock().expect("HID_API poisoned");
+            let mut api = HID_API.lock().expect("HID_API poisoned");
+            // device_list 是缓存快照：不 refresh 就永远看不到拔出（见 hid_list 注释）
+            refresh_devices_best_effort(&mut api);
             let found = api.device_list().any(|d| d.path().to_string_lossy() == path);
             found
         };
@@ -128,7 +141,11 @@ fn spawn_disconnect_poller(app: AppHandle, path: String) {
 
 #[tauri::command(async)]
 pub fn hid_list() -> Result<Vec<NativeDeviceInfo>, String> {
-    let api = HID_API.lock().map_err(|_| err("ERROR", "HidApi 互斥锁中毒"))?;
+    let mut api = HID_API.lock().map_err(|_| err("ERROR", "HidApi 互斥锁中毒"))?;
+    // ⚠️ device_list() 返回的是上次枚举的缓存快照（仅 new()/refresh_devices() 时更新）。
+    // HID_API 是全局静态，App 启动（键盘可能未插入）时的快照会一直陈旧——
+    // 不刷新的话，之后插上键盘永远枚举不到，刷新按钮/热插拔看门狗全部失灵。
+    refresh_devices_best_effort(&mut api);
     let mut out: Vec<NativeDeviceInfo> = Vec::new();
     for d in api.device_list() {
         let is_via = d.usage_page() == VIA_USAGE_PAGE && d.usage() == VIA_USAGE;
@@ -155,7 +172,8 @@ pub fn hid_open(app: AppHandle, path: String) -> Result<NativeDeviceInfo, String
         let opened = opened_guard();
         if let Some(o) = opened.as_ref() {
             if o.path == path {
-                let api = HID_API.lock().map_err(|_| err("ERROR", "HidApi 互斥锁中毒"))?;
+                let mut api = HID_API.lock().map_err(|_| err("ERROR", "HidApi 互斥锁中毒"))?;
+                refresh_devices_best_effort(&mut api);
                 if let Some(info) = find_info(&api, &path) {
                     return Ok(info);
                 }
@@ -164,7 +182,10 @@ pub fn hid_open(app: AppHandle, path: String) -> Result<NativeDeviceInfo, String
     }
     // 打开一次，同时取回设备信息（HidApi 必须比 HidDevice 活得久，故 api 持全局静态）
     let (dev, info) = {
-        let api = HID_API.lock().map_err(|_| err("ERROR", "HidApi 互斥锁中毒"))?;
+        let mut api = HID_API.lock().map_err(|_| err("ERROR", "HidApi 互斥锁中毒"))?;
+        // open_path 在 macOS 上按 path 在设备列表缓存里定位 IOHIDDeviceRef——
+        // 先 refresh 再开，否则打开启动后新插入的设备会失败
+        refresh_devices_best_effort(&mut api);
         let cpath = std::ffi::CString::new(path.as_str()).map_err(|_| err("ERROR", "path 含非法字节"))?;
         let dev = api
             .open_path(&cpath)
