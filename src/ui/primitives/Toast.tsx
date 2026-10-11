@@ -1,6 +1,8 @@
 // 轻量 Toast：成功 2s 自动消失，错误常驻可关。全局单例 store。
 // 进出场均走 CSS 动画（退场由 leaving 标记驱动，播完再卸载）。
 import { create } from 'zustand';
+import { useUiStore } from '@/store/useUiStore';
+import { Mascot } from '@/ui/brand/mascots';
 import { cn } from '@/shared/cn';
 import { AlertCircle, CheckCircle2, Info, X } from 'lucide-react';
 
@@ -62,10 +64,18 @@ const ICONS = {
   info: Info,
 } as const;
 
+/** 吉伊卡哇主题下用角色表情承担反馈：成功=元气乌萨奇，出错=快哭的吉伊，提示=温和哈奇。 */
+const MASCOT_BY_KIND = {
+  success: { who: 'usagi', mood: 'happy' },
+  error: { who: 'chiikawa', mood: 'worry' },
+  info: { who: 'hachiware', mood: 'idle' },
+} as const;
+
 export function ToastHost(): React.JSX.Element {
   const items = useToastStore((s) => s.items);
   const leaving = useToastStore((s) => s.leaving);
   const dismiss = useToastStore((s) => s.dismiss);
+  const mascotTheme = useUiStore((s) => s.theme) === 'chiikawa';
 
   return (
     <div className="pointer-events-none fixed bottom-10 right-4 z-50 flex w-72 flex-col gap-2">
@@ -81,7 +91,17 @@ export function ToastHost(): React.JSX.Element {
               leaving.includes(item.id) ? 'animate-slide-out' : 'animate-slide',
             )}
           >
-            <Icon size={14} className={`mt-0.5 shrink-0 ${color}`} />
+            {mascotTheme ? (
+              <Mascot
+                who={MASCOT_BY_KIND[item.kind].who}
+                mood={MASCOT_BY_KIND[item.kind].mood}
+                size={20}
+                animate={false}
+                className="mt-0.5 shrink-0"
+              />
+            ) : (
+              <Icon size={14} className={`mt-0.5 shrink-0 ${color}`} />
+            )}
             <span className="flex-1 text-fg">{item.message}</span>
             <button
               type="button"

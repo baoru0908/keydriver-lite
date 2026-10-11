@@ -7,6 +7,7 @@
 import { Suspense, lazy, useEffect, useRef } from 'react';
 import { PanelRightOpen } from 'lucide-react';
 import { useUiStore } from '@/store/useUiStore';
+import { MascotBubble, MascotTrio } from '@/ui/brand/mascots';
 import { useKeymapStore } from '@/store/useKeymapStore';
 import { useMenuStore } from '@/store/useMenuStore';
 import { useDeviceStore, startHotplugWatch } from '@/store/useDeviceStore';
@@ -48,12 +49,22 @@ const DevicePanel = lazy(() =>
 
 /** 面板级懒加载占位（design-tokens.md §7.2 骨架屏）。 */
 function PanelFallback(): React.JSX.Element {
+  // 吉伊卡哇主题：加载不是冷进度条，而是三只排队陪等（其余主题保持骨架屏）
+  const mascotTheme = useUiStore((s) => s.theme) === 'chiikawa';
   return (
-    <SkeletonGroup label="面板加载中" className="gap-3">
-      <Skeleton variant="text" className="w-40" />
-      <Skeleton variant="block" />
-      <Skeleton variant="block" className="h-32" />
-    </SkeletonGroup>
+    <div className="flex flex-col gap-3">
+      {mascotTheme ? (
+        <div className="flex items-center gap-2 animate-fade-up">
+          <MascotTrio mood="wait" size={26} />
+          <MascotBubble who="hachiware" line="正在准备面板，稍等一下哦…" />
+        </div>
+      ) : null}
+      <SkeletonGroup label="面板加载中" className="gap-3">
+        <Skeleton variant="text" className="w-40" />
+        <Skeleton variant="block" />
+        <Skeleton variant="block" className="h-32" />
+      </SkeletonGroup>
+    </div>
   );
 }
 

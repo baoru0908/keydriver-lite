@@ -27,6 +27,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useUiStore, type PanelId } from '@/store/useUiStore';
+import { Mascot } from '@/ui/brand/mascots';
 import {
   selectMenuNavItems,
   useDefinitionStore,
@@ -103,6 +104,7 @@ export interface SideNavProps {
 }
 
 export function SideNav({ compact = false }: SideNavProps): React.JSX.Element {
+  const mascotTheme = useUiStore((s) => s.theme) === 'chiikawa';
   const currentPanel = useUiStore((s) => s.currentPanel);
   const currentMenuId = useUiStore((s) => s.currentMenuId);
   const setCurrentPanel = useUiStore((s) => s.setCurrentPanel);
@@ -139,9 +141,16 @@ export function SideNav({ compact = false }: SideNavProps): React.JSX.Element {
 
     return (
       <nav className="flex w-14 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-border bg-surface py-2">
-        <div className="mb-1 flex h-5 w-5 items-center justify-center rounded-card bg-accent-soft">
-          <Keyboard size={13} className="text-accent" />
-        </div>
+        {/* 品牌位：吉伊卡哇主题下角色当 logo（hover 微微跳一下，是这一族的性格） */}
+        {mascotTheme ? (
+          <span className="mb-1 flex h-6 items-center justify-center transition-transform duration-base ease-spring hover:-translate-y-0.5">
+            <Mascot who="chiikawa" mood="idle" size={22} animate={false} />
+          </span>
+        ) : (
+          <div className="mb-1 flex h-5 w-5 items-center justify-center rounded-card bg-accent-soft">
+            <Keyboard size={13} className="text-accent" />
+          </div>
+        )}
         {compactRows.map((row) => {
           const Icon = row.icon;
           return (
