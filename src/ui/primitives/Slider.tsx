@@ -8,6 +8,46 @@ import { useCallback, useRef } from 'react';
 import { cn } from '@/shared/cn';
 import { note } from '@/shared/note';
 
+// —— 原生拖拽兜底通道 ——
+// 本环境 WKWebView 拖动期间不派发 mousemove/pointermove（真机帧日志实证），
+// JS 事件全部失效时由 Rust 轮询 NSEvent.mouseLocation 推送 slider://drag 屏幕坐标。
+// clientX = x − window.screenX（X 轴两侧方向一致，points 与 CSS px 同单位）。
+let activeDragHandler: ((clientX: number) => void) | null = null;
+let nativeUnlisten: (() => void) | null = null;
+
+async function beginNativeDrag(onClientX: (clientX: number) => void): Promise<void> {
+  if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
+  activeDragHandler = onClientX;
+  if (nativeUnlisten !== null) return;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const { listen } = await import('@tauri-apps/api/event');
+    await invoke('slider_drag_begin');
+    nativeUnlisten = await listen<number>('slider://drag', (event) => {
+      const clientX = event.payload - window.screenX;
+      activeDragHandler?.(clientX);
+    });
+  } catch {
+    // 原生通道失败则退化为纯 mousemove 路径
+  }
+}
+
+function endNativeDrag(): void {
+  activeDragHandler = null;
+  if (nativeUnlisten !== null) {
+    nativeUnlisten();
+    nativeUnlisten = null;
+  }
+  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+    void import('@tauri-apps/api/core').then(({ invoke }) => invoke('slider_drag_end').catch(() => undefined));
+  }
+}
+
+// 窗口失焦（Alt-Tab 等）时强制结束拖拽，防拖拽态泄漏
+if (typeof window !== 'undefined') {
+  window.addEventListener('blur', () => endNativeDrag());
+}
+
 export interface SliderProps {
   readonly value: number;
   readonly min: number;
@@ -77,11 +117,14 @@ export function Slider({
       draggingRef.current = false;
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', stop);
+      endNativeDrag();
       void note('slider-up');
     };
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', stop);
     void note(`slider-down clientX=${e.clientX} value=${cfg.value}`);
+    // 原生轮询兜底：mousemove 派发不可靠，坐标推送恒可用；双通道算出同一值，互不冲突
+    void beginNativeDrag((clientX) => onChange(valueFromClientX(clientX)));
   };
 
   /** 触摸路径：与 react-colorful 同款（touchmove + touches[0]），preventDefault 防页面滚动。 */

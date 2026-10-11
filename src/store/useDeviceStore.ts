@@ -327,8 +327,11 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
     await get().refreshDevices();
     const devices = get().devices;
     void note(`auto-reconnect: listed ${devices.length} devices`);
+    // ⚠️ 必须限 viaCapable：键盘的非 VIA 接口（标准键盘/HID 接口）vid/pid/序列号完全相同，
+    // 只按 vid/pid 匹配会连到打字接口上——握手必败，表现为「假连接」
     const match = devices.find(
       (d) =>
+        d.viaCapable === true &&
         d.vendorId === saved.vendorId &&
         d.productId === saved.productId &&
         (saved.serialNumber === null || d.serialNumber === saved.serialNumber),
