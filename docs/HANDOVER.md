@@ -1,269 +1,87 @@
-# keydriver 项目交接文档
-
-> 生成时间：2026-10-10 20:45
-> 生成方式：**主理人磁盘实测 + 各成员汇报交叉核对**。所有数字均来自实际命令输出，未采用任何口头估计值。
-
----
-
-## 一、一句话现状
-
-一个读取 VIA 键盘定义文件、通过 USB HID 与键盘通信的**本地跨平台键盘驱动 GUI**，已完成 M1（核心逻辑层）与 T04（菜单引擎），**无硬件即可跑通全部界面**；真机接入（T05）尚未开始，键码表有一处待裁决的协议冲突。
-
----
-
-## 二、实测健康基线（交接接手请先重跑这四条）
-
-```bash
-cd /Users/baoru/Downloads/AI/keydriver
-export PATH="/Users/baoru/.workbuddy/binaries/node/versions/22.22.2-6/bin:$PATH"
-
-npx vitest run      # 测试
-npx tsc --noEmit    # 类型检查
-npm run check       # 硬编码扫描 + 定义文件统计断言 + tsc
-npx vite build      # 构建
-```
-
-| 检查项 | 实测结果 | 状态 |
-| --- | --- | --- |
-| `npx vitest run` | **38 个测试文件 / 492 用例 / 480 通过 / 12 失败** | 12 条红全是刻意保留的缺陷复现，见 §5 |
-| `npx tsc --noEmit` | **1 个 error** | ⚠️ `SimulatedFirmware.ts(24,10): 'canonicalAddressKey' 声明后未使用`（重构遗留，1 分钟可清） |
-| `npm run check` | 硬编码扫描 129 文件通过；定义文件统计断言全部通过 | ✅ |
-| `npx vite build` | `✓ built in 9.64s` | ✅（产物 `dist/`，JS 约 543 kB，有 >500kB chunk 警告，未做代码分割） |
-
-> **⚠️ 跑测试前必读**：确认没有进程正在写入 `src/`。开发过程中曾出现 10~16 条「假红」，原因是测试全量跑的同时工程师正在重写源文件，撞上落盘中间态。源码稳定后全部自动转绿。
-
----
-
-## 三、项目规模（磁盘实测）
-
-```
-keydriver/
-├── src/           130 个文件（其中 38 个测试文件）
-├── docs/          PRD.md · ARCHITECTURE.md · research-via-protocol.md · ELECTRON.md
-├── scripts/       verify-definition-stats.mjs（基线断言）· check-no-hardcode.mjs
-├── definitions/   7-19-Em60_cn.json（目标键盘定义文件，唯一测试样本）
-└── dist/          构建产物
-```
-
-| 模块 | 文件数 | 职责 |
-| --- | --- | --- |
-| `src/core/hid/` | 8 | 传输层：32 字节帧编解码、Dummy 模拟固件、传输接口 |
-| `src/core/protocol/` | 17 | VIA 协议层：命令封装、键码编解码、值宽度推断、自定义值编解码 |
-| `src/core/device/` | 10 | 设备门面：握手、会话管理、写值防抖队列 |
-| `src/definition/` | 20 | 定义文件解析：schema 校验、菜单扁平化、showIf 求值、KLE 几何、布局选项 |
-| `src/keycodes/` | 13 | 键码层：键码表、格式化、Any 输入解析 |
-| `src/store/` | 6 | Zustand 状态：设备/定义/键位/菜单/UI/调试 |
-| `src/ui/` | 45 | 界面：布局骨架、基础控件、键位区、键码面板、**菜单引擎**、调试面板 |
-| `src/io/` | 2 | 配置导入导出 |
-| `src/shared/` | 5 | 工具：结果类型、防抖、hex、日志、i18n 骨架 |
-
----
-
-## 四、已完成里程碑
-
-### M1 · 核心逻辑层 ✅
-传输层 / 协议层 / 设备门面 / 定义解析 / 键码层 + 四区 UI 骨架 + 10 个基础控件 + Dummy 模拟设备。
-
-**目标达成**：无键盘也能导入定义文件 → 选 Dummy 设备 → 连接 → 顶部显示 `VID 0x5594 · PID 0x0005 · v11` → 键位图正确渲染 → 改键回读一致。
-
-### T04 · 菜单引擎 ✅（刚落盘，未收到工程师完整汇报）
-`src/ui/menu/` 已具备：`MenuPane` / `MenuGenerator` / `MenuSection` / `ControlRenderer` / `SaveBar` + 6 类控件（`Toggle` / `Range` / `Dropdown` / `Color` / `Keycode` / `Button`）+ 配套 `menu-engine.test.ts`。
-`src/io/` 的 `backup.ts` / `download.ts`（配置导入导出）已就位。
-
-> ⚠️ **T04 尚未正式验收**：工程师未提交完整汇报，T04 的三条验收标准（349 控件全可读写、灯光 All Off 联动、导出→复位→导入一致）**尚未逐条实测**。接手后请优先补这一步。
-
-### 未做
-- **T05 · 真机 WebHID**（`WebHidTransport` 尚未实现，目前只有 Dummy 后端）
-- 拖拽换位、批量编辑
-- 宏编辑（本键盘定义里无该菜单）
-
----
-
-## 五、当前 12 条失败用例（全部是刻意保留的缺陷复现，不是回归）
-
-这些是 QA 主动留下的红色「探针」，用于证明缺陷真实存在。**修好源码后它们会转绿，不要为了变绿去改断言。**
-
-| 缺陷 | 位置 | 现象 | 状态 |
-| --- | --- | --- | --- |
-| **Bug C · Quantum 页键码被误判为 Mod-Tap** | `src/keycodes/KeycodeFormatter.ts:55` | `format(0x7800)` 显示 `RGUI_T(kc)`，实为 RGB 灯效页；`0x7100` MIDI 页、`0x7200` 音序器页、`0x7400` 可编程键页同样中招 | 🔴 **待架构裁决** |
-| **Bug D · 显示名 ↔ Any 输入不是同一套词表** | `src/keycodes/AnyKeycodeParser.ts:48-58` vs `KeycodeFormatter.ts:28-32` | **215 个内置键码中 119 个**的显示名无法被 Any 输入解析回原键码。用户复制界面键名粘贴 → 「改了没反应」 | 🔴 已判必修，排在 Bug C 后 |
-| **Bug F · `findByVidPid` 不认大写 hex** | `src/definition/DefinitionRepository.ts:55-66` | 定义文件写 `0X1A2B` / `0x1A2b` 时 VID/PID 查不回 → 「设备重连自动加载定义」静默失效 | 🔴 已判必修，可立即修 |
-
-### 已修复的 5 个（回归测试已转绿，可作为回归基线）
-
-| 编号 | 内容 |
-| --- | --- |
-| Bug A | `SimulatedFirmware` 地址键格式（`10:1:2:3`）与 `CustomValueCodec.addressKey`（`10:1:2.3`）不一致 → **40 个 Combos 二维索引控件在 Dummy 模式读写全错** |
-| Bug B | `getLayerCount` 静默返回 0 层 → 已加「层数恒 ≥1」合理性校验，抛 `ProtocolSanityError` |
-| Bug E | `getProtocolVersion` 第二方言兜底失效（返回 **2816 而非 11**，且 2816 ≥ 13 会误触发读键码字典版本）→ 已加方言错位判定 + 上限 |
-| — | 二维索引地址形状在 `eepromReset` 后被保留（有意语义变更，见 §7） |
-| — | `scripts/ui-render.test.ts` 超时（曾因整棵 App 模块图冷启动 transform 超 5s 默认值） |
-
----
-
-## 六、⚠️ 卡住的关键决策：键码表新老协议冲突
-
-**这是接手后第一优先要解决的事**，它卡着 Bug C 与 Bug D 两条必修。
-
-**三方口径不一致**：
-- `src/core/protocol/constants.ts:66-86` 声明 `0x7100=QK_MIDI`、`0x7200=QK_SEQUENCER`、`0x7400=QK_PROGRAMMABLE_BUTTON`、`0x7800=QK_RGB`
-- `src/keycodes/modTap.ts:62` 用 `MT(m.bit, 0)` 注册基准码，而 `MT(0x11,0)=0x7100`、`MT(0x12,0)=0x7200`、`MT(0x14,0)=0x7400`、`MT(0x18,0)=0x7800` —— **恰好把四个页的基址吃掉了**（精确表优先）
-- `src/keycodes/KeycodeFormatter.ts:55` 把整个 `0x7000–0x7FFF` 判为 Mod-Tap
-
-**冲突所在**：`MT()` 允许右侧修饰到 `0x18`（→ 最高 `0x78FF`），与「`0x7800` 是 RGB 页」这两条假设**不可能同时成立**。
-
-**关键线索（指向新协议）**：
-- 架构调研文档 `docs/research-via-protocol.md` §D 写明新协议 `QK_MOD_TAP = 0x2000–0x3FFF`，老协议才是 `0x6000`
-- 定义文件菜单 label 出现 `按键复用(0)-0X5700` → `QK_TAP_DANCE = 0x5700`（新协议值）
-- `customKeycodes` 映射到 `QK_KB + N = 0x7E00 + N`（新协议值）
-- 本产品握手要求 protocol ≥ 11，当前 QMK 为 13
-
-**反证**：现有单测 `src/keycodes/__tests__/KeycodeFormatter.test.ts` 断言 `0x6104 → LCTL_T(A)`，用的是老协议口径。
-
-**已提请架构师裁决，两次催办未回复。** 接手后可直接查阅 `docs/research-via-protocol.md` §D 与 `docs/ARCHITECTURE.md` 自行判定，或重新问架构师。裁决需要回答三问：
-1. 该键盘用新协议还是老协议键码表？
-2. 若新协议：`0x6000–0x7FFF` 段如何拆分（Magic/MIDI/Lighting/Quantum 各页，或兜底 hex）？`0x6104` 那条断言是错了还是固件确实返回老协议值？
-3. `KeycodeTable` 目前只有 basic/layers/modtap 三类，**缺 media/lighting/quantum/macro**，导致改键时选不到灯效键——S2 的 Lighting 是否要提前？
-
----
-
-## 七、必须知道的 7 条实现约束（都是踩过坑才定下来的）
-
-1. **界面文案禁止硬编码**。代码中不得出现 `EC_BM60` / `0x5594` / `静电容` / `Tap Dance` / `Combos` / `SOCD` 等与具体键盘耦合的字样。`npm run check` 会扫描 129 个文件，命中即失败（当前通过）。所有文案必须来自定义文件。
-
-2. **`content[0]`（valueKey）不唯一**，实测 2 处重名：
-   - `id_save_threshold_data` —— 两个 button，同地址，`options` 分别 `[0]` 和 `[1]`
-   - `id_magic_oneshot_enable` —— 两个 toggle，**指向同一地址 `7:12`**（厂商有意做的双入口快捷方式，已确认非笔误）
-   
-   → **控件唯一 ID 必须由「菜单路径 + 序号」生成**；**值订阅必须按 `ValueAddress` 而非 controlId**（否则改一处另一处不刷新）；**备份文件主键用 controlId**（用 valueKey 会丢数据）。
-
-3. **`showIf` 双层求值**。实测 60 条：58 条在叶子控件、**2 条在分组节点**，且这 2 个分组**没有 `label` 字段**。漏掉分组层求值会导致「静电容工具 → 触发模式切换」整组失效。分组 label 缺省时内联展开、不渲染空标题。
-
-4. **菜单用 `content` 承载子节点，没有 `children` 字段**。靠「有无 `type` 字段」判别是分组还是控件。Parser 需兼容两种写法。
-
-5. **`range` 的 `min` 与字节宽度是两个独立维度**。78 个 range 中「min=1 的 35 个」与「需 2 字节的 35 个」**数值巧合但交集仅 13 个**。若误推成「min=1 就用 2 字节」，78 个里会错 **44 个**。滑块下限必须取 `options[0]`（**写死 0 和写死 1 都是错的**）。
-
-6. **`button` 的 `options` 是真参数，不能假设恒为 `[0]`**。实测 `[0]×7`、`[1]×1`、字段缺失×1（归一化为 `[]`）。那个 `[1]` 必须原样透传，否则用户在模式 1 下点「应用并保存」下发的仍是 0，**点了没反应且不报错**。
-
-7. **KLE 必须行压紧**。定义文件第 4–8 行是底行的 5 种配列变体，KLE 里分占 y=4.25…8.25。过滤后必须按离散 y 重新分配紧凑行号，否则底行掉到 y=8、中间空 4 行。已用 512 种位段组合穷举验证「压紧后底行恒为 y=4」。
-
----
-
-## 八、协议实现要点（照抄即可，勿重新推导）
-
-| 项 | 值 |
-| --- | --- |
-| 传输 | USB Raw HID，Usage Page `0xFF60` / Usage `0x61` |
-| 报文 | 固定 32 字节；单包有效载荷 28 字节，缓冲区命令必须分块 |
-| 交互模型 | 同步请求-响应，固件**回显 buffer**（响应 = 命令回声 + 参数回声 + 返回值） |
-| 未识别 | `resp[0] === 0xFF` → `UnhandledCommandError` |
-| **方言错位** | `resp.slice(1, req.length) !== req.slice(1)` → `EchoParamMismatchError`（**发错方言不会报错，只会读回全是 0，这是唯一防线**） |
-| 字节序 | 键码 / layout_options / buffer offset 均为**大端** |
-| 键位偏移 | `offset = layer*rows*cols*2 + row*cols*2 + col*2` |
-| 版本握手 | `0x01` 读协议版本，**≥ 11 走 V3 方言（带 channel 字节）** |
-| 键码字典 | **protocol ≥ 13 必须先读 `0x02` + value_id `0x06`**，4 字节大端 BCD，合法范围 `0x00000008–0x00000009` |
-| 定义文件 | 本项目按 **VIA V3 / 协议 v11+** 处理（含 `menus` 字段即为 V3） |
-| 自定义值 | `content = [valueKey, channel_id, value_id, ...indexes]`，长度 3/4/5 三种 |
-
----
-
-## 九、目标设备与配置基线
-
-**定义文件**：`definitions/7-19-Em60_cn.json`
-
-```
-8 顶层菜单 / 67 分组节点 / 349 叶子控件 / 98 个 KLE 键位条目 / 5 布局选项组 / 2 自定义键码
-控件类型分布：keycode 131 · toggle 90 · range 78 · dropdown 33 · button 9 · color 8
-content 长度：3 / 4 / 5 三种（其中 40 个 5 元素 = Combos 二维索引）
-range 组合：[0,255]×21 [1,255]×22 [0,1000]×22 [1,1000]×10 [1,1023]×3
-```
-
-> 这些数字**不要手工修改**。`scripts/verify-definition-stats.mjs` 是唯一事实来源（已接入 `npm run check`），换定义文件时以脚本输出更新文档，**禁止反过来改断言迁就文档**。
-
----
-
-## 十、启动方式
-
-```bash
-cd /Users/baoru/Downloads/AI/keydriver
-export PATH="/Users/baoru/.workbuddy/binaries/node/versions/22.22.2-6/bin:$PATH"
-
-npm run dev        # http://localhost:5173  （推荐，带 HMR）
-npm run desktop    # Chrome 无边框 app 窗口（已实测可拉起）
-npm run test       # 单元测试
-npm run check      # 硬编码扫描 + 定义统计断言 + tsc
-npm run build      # tsc --noEmit && vite build
-```
-
-**上手路径**：设备选择器选 Dummy → 连接 → 顶栏显示 `VID 0x5594 · PID 0x0005 · v11` → 调试面板看握手报文 → 键位区切 5 种配列看底行 → 点键改码看 `0x05` 写帧 → 左侧菜单切到 8 个菜单逐个点。
-
----
-
-## 十一、技术选型与运行形态（已定，勿轻易推翻）
-
-| 项 | 选择 | 关键理由 |
-| --- | --- | --- |
-| UI | React 19 + TS 5.9 + Tailwind 4 + Radix primitives | **否决 MUI**：其 Material 观感偏「后台管理系统」，与「现代化简洁」有距离，深度定制成本高于直接写 Tailwind |
-| 状态 | Zustand 5（6 个 slice） | 349 个控件需按 controlId 精确订阅，Redux boilerplate 无收益 |
-| HID 后端 | **WebHID 为主 + Dummy 必做** | 规避 Apple Silicon 上 node-gyp 原生编译风险；传输层为可插拔接口，Tauri/Electron 后续零改造接入 |
-| 应用外壳 | **Electron 为主外壳（已落地 `electron/main.cjs`）** | 用户要求真正的桌面程序（现在 Mac、以后 Windows），非浏览器网页。Electron 内嵌 Chromium → WebHID 零改造、前端零重写、Mac/Windows 真原生窗口。沙箱 GitHub 被墙故放 `optionalDependencies` 防御性安装；用户真机 `npm i` 即可打包。Tauri 因 Mac WebKit 不支持 WebHID 不适合。 | 见 `docs/ELECTRON.md`：开发 `npm run electron:dev -- --dev`、打包 `npm run dist`（dmg/nsis）。原 `npm run dev` 浏览器预览保留。 |
-| 持久化 | IndexedDB（`idb-keyval`）+ localStorage，抽象为 `DefinitionRepository` 接口 | 未来可换 fs |
-| node-hid | 降为 P2 预留（`NodeHidBridgeTransport` 仅留接口） | 同上，编译风险 |
-
----
-
-## 十二、接手后建议的行动顺序
-
-### 立即（半天内）
-1. ~~清掉 1 个 tsc error~~ ✅ **已完成**：删除 `src/core/hid/SimulatedFirmware.ts` 的 `canonicalAddressKey` 死代码，`npm run build` 与 `npm run check` 现已全绿，`dist/` 可一键产出。
-2. **做键码表裁决**（§6）—— 卡着两条必修缺陷，问架构师或依 §6 线索自行判定
-3. **补 T04 正式验收**（§4）—— 349 控件全可读写、灯光 All Off 联动、导出→复位→导入一致
-
-### 短期（1–2 天）
-4. 修 **Bug F**（VID/PID 大小写，复用 `parseId` 归一化，单点低成本）
-5. 按裁决结果修 **Bug C**（键码表区间），随后修 **Bug D**（显示名 ↔ Any 输入往返）
-6. 补 `KeycodeTable` 的 media / lighting / quantum / macro 分组（否则选不到灯效键）
-7. **T05 真机接入**：实现 `WebHidTransport`（`navigator.hid.requestDevice` + `0xFF60/0x61` 过滤），标注「未实测」直到有硬件
-
-### 中期
-8. UI 层与 store 层测试（**当前是 QA 覆盖盲区**，两位 QA 都只覆盖了逻辑层）
-9. `KeycodeTable.byCodeMap()` 每次调用全量重建 Map，98 个键帽渲染会重建 98 次 —— 加缓存（QA 怀疑这贡献了 `ui-render` 超时）
-10. 代码分割（JS 543 kB 有 chunk 警告）、`ValueWriteQueue` 边界测试
-
-### 真机联调第一件事
-**抓 `0x01` 的响应字节，确认协议版本的主流方言**（Bug E 修复后的正确性依赖这个）。同时验证：protocol ≥ 13 时能正确读出 keycodes version。
-
----
-
-## 十三、遗留待确认的语义（QA 已记录现状，未派修）
-
-1. `compactRows` 对异形键第二矩形的 `y2` 用同一张 yMap，若落在被过滤掉的行上会保留原始坐标不压紧。当前定义文件异形键 `y2 == y`，不触发。
-2. `parseKeyName` 图例内空格（`"4 , 1"`）不识别。当前定义文件无此写法。
-3. `getKeymapBuffer/setKeymapBuffer` 对 `size > 28` 静默 `Math.min` 截断无告警。调用方 `DeviceFacade.getKeymap` 已正确分块，暂无实害。
-4. 地址形状只对**曾播种/写入过**的地址生效；陌生二维地址首次写入按 0 索引解析。生产路径靠 `DeviceFacade.seedDummy` 在 connect 时播种全部 349 个控件，不受影响。
-5. `listDefinitions` 只按 `savedAt` 倒序，同毫秒连续导入两份时「最近」会退化为键序。
-
----
-
-## 十四、团队协作纪律（本次项目沉淀，接手请沿用）
-
-本项目三位 QA 与一位架构师在协作中踩过的坑，规则已固化进 `npm run check`：
-
-1. **统计数字以脚本输出为唯一出处**。三轮交叉复核中，人工归并统计导致 6 处错误（3 处「已算对但转述错」、3 处「建模遗漏」）。已建立 `scripts/verify-definition-stats.mjs`（23 条断言）作为基线。
-2. **脚本化只能防「数错」，防不了「想不到」**。建模推断类错误必须靠交叉复核 —— 这是两条不同的防线，不可互相替代。
-3. **口头/消息中的数字不具权威性**，任何人都可以随时跑脚本证伪。文档也不豁免。
-4. **同一事实只在一处产生**，其余全部引用。发现同一事实在两处表述打架时，立刻上报，不要各自选一边改代码或改测试。
-5. **写失败测试是描述缺陷的最有效方式**，比文字描述更不可辩驳。
-6. **域划分**：QA 严过关-1 负责 `definition/` + `keycodes/`；严过关-2 负责 `core/{protocol,hid,device}`。冲突已按「谁的文件谁维护」裁决。
-
----
-
-## 十五、文档索引
-
-| 文件 | 内容 |
-| --- | --- |
-| `docs/PRD.md` | 产品需求：调研结论、配置实测、需求池 P0×16/P1×8/P2×6、16 条验收断言 |
-| `docs/ARCHITECTURE.md` | 技术选型、文件清单、核心接口、时序图、风险登记表、12 条风险 |
-| `docs/research-via-protocol.md` | VIA 协议一手源码采集（1983 行）：命令常量、HID 报告格式、**keycode 分段规则**、vial-gui 模块划分 |
-| `scripts/verify-definition-stats.mjs` | 定义文件基线断言（唯一事实来源） |
-| `scripts/check-no-hardcode.mjs` | 硬编码特征词扫描 |
+# KeyDriver 交接文档
+
+> 交接日期：2026-10-11 · 交接人：交付总监（主理人）· 团队：software-keydriver-audit（PM 许清楚 / 架构师 高见远 / 工程师 寇豆码 / QA 严过关）
+> 本文档**取代** 2026-10-10 旧版交接（旧版基线：492 用例 12 红、真机未接入——均已过时，现基线 628/628 全绿、真机接入并完成两轮 bug 修复）
+
+## 1. 项目全景
+
+| 仓库 | 本地路径 | GitHub | 当前 main |
+|------|---------|--------|-----------|
+| KeyDriver 原版 | `/Users/baoru/Downloads/AI/keydriver` | `baoru0908/keydriver`（私有） | `2e72085` |
+| KeyDriver Lite | `/Users/baoru/Downloads/AI/keydriver-lite` | `baoru0908/keydriver-lite`（私有） | `24f329b` |
+
+- 技术栈：Electron + Vite + React 19 + TypeScript + Tailwind v4（CSS-first @theme）+ Radix + zustand + lucide
+- 协议：VIA V3 / WebHID（usagePage 0xFF60 / usage 0x61），目标键盘 Em60 / EC_BM60（VID 0x5594 / PID 0x0005）
+- 两个仓库同源同历史；Lite 仓库已配置 `upstream` remote 指向本地原版目录，用于修复同步
+- 测试基线：**628/628（55 文件）串行 vitest**，两仓库一致
+
+## 2. 已交付（全部已推送 GitHub）
+
+### 迭代 1（P0）
+- T01 分发合规：after-sign 公证钩子（env 门控，无证书回退 ad-hoc）、electronLanguages、hardenedRuntime
+- T02 感知性能：函数式 manualChunks（react-vendor/radix-ui/zod/react-colorful）、重面板 React.lazy
+- T03-1..5：设计令牌基座、useViewTransition、主题基建（深色默认 / theme-dark·theme-light / 首启跟随系统）、间距防回潮守卫（codemod-spacing.mjs）、Button/Switch/Modal 微动效
+
+### 迭代 2（T06-1..10）
+- **P0**：设备断连感知（`'lost'` 态 + intentionalClose 守卫 + 保留脏值 + 一键重连）；未保存关窗拦截（`electron/preload.cjs` 唯一 IPC 面，`keydriver:` 通道前缀 + 原生 dialog）；最小窗口 960×640 + 启动白闪消除 + 窄窗键码面板自动折叠
+- **UI P1**：EmptyState/Skeleton/ErrorState 三态原语（design-tokens.md §7 规格）、Radix Tabs、Card/Badge、e2–e4 elevation、亮色语义色补齐、reduced-motion 全局降级
+- **多平台**：useBreakpoint 单一断点源（1080px）+ SideNav compact、快捷键同源体系（⌘/Ctrl S/Z/1-7//，platform.ts 注册与标签同数据）、caption 12px 收敛、主题切换同步窗口底色
+
+### BugFix（滑块三部曲）
+| Commit | 问题 | 根因 | 修复 |
+|--------|------|------|------|
+| `f631fff` | Backlight 亮度/速度值被清零 | 写后回读自校验见回读不一致就自动 alt 宽度重写；固件对 channel 3 回读恒 0 → 2 字节重写被固件按 1 字节解析取 0x00 | 回读不一致**绝不重写设备**，改只读探测+告警 |
+| `2e72085` | 所有滑块失效 | ①无单实例锁，双开抢 WebHID 设备；②固件坏回读覆盖乐观值；③探测失败误报"写入失败" | requestSingleInstanceLock + verified 地址保留乐观值 + 探测失败改发"回读校验失败"告警 |
+
+### Lite 阶段 A
+- 品牌改名（KeyDriver Lite / com.keydriver.lite）+ 打包裁剪：**288.1M → 224.4M（-22%）**
+- 裁剪清单（otool 实证）：非中英语言包（-47.7M）、libvk_swiftshader.dylib + vk_swiftshader_icd.json（-15.8M，无 Mach-O 链接引用）、default_app.asar；**libffmpeg.dylib 不删**（链接期硬依赖）
+- 冒烟验证通过（存活、零崩溃报告、codesign --verify --deep 绿）
+
+## 3. 未完成 / Backlog
+
+### 阶段 B（下一步主任务，**尚未开工**）
+- 目标：Lite 向 **~10M** 推进 = Tauri v2 + Rust hidapi 桥（`NativeHidTransport` 实现既有 `HidTransport` 接口的 `'nodehid'` 预留位，`src/core/hid/index.ts` 工厂处激活）
+- 设计依据：`docs/SIZE-REDUCTION-EVAL.md`（含 hid.rs / NativeHidTransport.ts 实现草图、字节语义 5 差异表、风险清单 R1-R7）
+- **保守口径**：全量迁移投入按 1–2 人月重估、体积按 15–30M 取保守值（不采信报告的 1-2 周 / 5-15M）
+- **DoD（5 条全过才升级为承诺轨道）**：①R1 真机探针绿（hidapi 枚举+open 0xFF60/0x61，含 SeizeDevice 兜底结论）②NativeHidTransport+hid.rs 帧级等价 diff（Dummy+SimulatedFirmware vs 真机）③feature-report 具体命令码往返绿 ④Tauri app build+签名+启动+`tauri://localhost` secure context 正常 ⑤真机一次真实配置写读往返
+- 环境已就绪：**cargo 1.99.0 / rustc 1.99.0**（`~/.cargo/bin`，需 `source ~/.cargo/env`）；npm registry / crates.io / rustup 均可达
+- 策略：Electron 分支保留 + 双轨并行，任何时刻有可回退版本
+
+### Backlog
+1. `src/core/device/ValueWidth.ts:123-145` 死代码 `verifyWrite()` 仍含 alt 重写逻辑（无生产调用方），删除防误用复活
+2. mid-connect 意外断连终态 'error' 而非 'lost'（低严重度）
+3. 快捷键"输入框聚焦不抢键"无自动化测试（需引入 jsdom，环境决策）
+4. P2 字号批次：~55 处散落 `text-[10px]/[11px]/[12px]` 收敛（连带键码网格密度/按钮高度，独立批次）
+5. Linux 分发 target（AppImage/deb + udev 说明）
+6. 阶段 B 完成后的 Electron 分支去留决策
+
+## 4. 用户待办
+
+1. **真机复测滑块**：`release/KeyDriver.app`（289M，18:28 构建含全部滑块修复）——拖 Brightness / Effect Speed 预期：数值跟手、切面板不回 0、双开时第二实例秒退并聚焦已有窗口
+2. **阶段 B 开工时配合 R1 探针**：插上 Em60 键盘跑探针脚本（待创建，一条命令），这是阶段 B 唯一硬门槛
+
+## 5. 关键教训（踩坑实录）
+
+1. **裁剪 Electron 组件必须 `otool -L` 实证**：`libffmpeg.dylib` 是 Electron Framework 链接期硬依赖（LC_LOAD_DYLIB），凭"无媒体需求"推断删除 → dyld SIGABRT 启动即崩。删除任何 Framework 内组件前先全 bundle 扫描链接引用
+2. `libvk_swiftshader.dylib` 无 Mach-O 链接引用（动态加载的 Vulkan ICD）可安全删除，`vk_swiftshader_icd.json` 随删避免悬空 manifest
+3. **固件回读会撒谎**：channel 3 亮度/速度 GET 恒回 0。任何"回读不一致即自动重写"的逻辑都会把值清零（2 字节大端编码值≤255 时首字节恒 0）。自校验的自动纠错若纠错动作本身有副作用，比不纠错更危险
+4. **Electron 必须加 `requestSingleInstanceLock`**：双开抢 WebHID 设备，第二实例写入全部静默失败
+5. **本机 git push 通道**：全局 insteadOf 把 SSH 重写为 HTTPS 且走代理，代理对 github.com 会间歇 502。SSH 直连绕过：`git -c url."git@github.com:baoru0908/".insteadOf="git@github.com:baoru0908/" push git@github.com:baoru0908/<repo>.git main`（恒等映射抢最长匹配优先权，绕过全局重写）
+6. **测试必须串行**：`npx vitest run --maxWorkers=1 --minWorkers=1`，并行时 SSR 冷启动用例假超时
+7. macOS BSD grep 不支持 `\|`，用 ripgrep（Grep 工具），否则静默无输出误导判断
+8. npm 安装依赖可能清掉 `node_modules/electron/dist` 二进制且离线无法重下——可从已构建 .app 的 `Contents/Frameworks/` 抢救还原
+
+## 6. 工程约定
+
+- `npm run check` = tsc + 硬编码守卫（只扫 src）+ codemod-spacing + definition-stats
+- 代码风格：2 空格缩进、src 下分号结尾、零硬编码（新视觉属性先加令牌再加类）
+- 提交规范：**严禁 author trailer**；团队成员不 commit，主理人统一提交推送
+- 设计基准：`docs/design-tokens.md`（§3 elevation / §4 motion / §7 状态范式 / §8 状态色）；需求基准：`docs/PRD-iteration2.md`；架构与瘦身评估：`docs/ARCHITECTURE.md` · `docs/SIZE-REDUCTION-EVAL.md`
+- 打包：`scripts/make-app.mjs` 是离线兜底（裁剪+ad-hoc 签名都在这）；electron-builder 配置并存（正式签名渠道）
+- Lite 与原版同步：原版修 bug → lite `git fetch upstream main && git cherry-pick <hash>` → 串行测试确认 → push
+
+## 7. 团队协作流程备注
+
+- 流程调整（用户反馈 QA 环节效率偏低后生效）：**轻量验证由主理人亲自执行（分钟级：otool/产物结构/冒烟/串行测试抽查），QA 保留给高风险环节**——阶段 B 的 hidapi 桥帧级等价性验证是下一个 QA 主战场
+- 交接时团队状态：全部成员已暂停待命，可随时按上述 Backlog 重新拉起
