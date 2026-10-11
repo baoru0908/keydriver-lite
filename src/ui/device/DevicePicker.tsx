@@ -56,12 +56,15 @@ export function DevicePicker({ open, onOpenChange }: DevicePickerProps): React.J
     void probeGranted();
   }, [open, transportKind]);
 
-  /** 切换传输方式：Dummy 模拟设备 ↔ 真实键盘（WebHID）。 */
-  const switchTransport = async (kind: 'dummy' | 'webhid'): Promise<void> => {
+  /** 切换传输方式：Dummy 模拟设备 ↔ 真实键盘（WebHID）↔ 原生键盘（Tauri hidapi 桥）。 */
+  const switchTransport = async (kind: 'dummy' | 'webhid' | 'nodehid'): Promise<void> => {
     if (kind === transportKind) return;
     setTransportKind(kind);
     await refreshDevices();
   };
+
+  /** 原生 hidapi 桥只在 Tauri 桌面外壳里可用。 */
+  const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
   /**
    * 授权真实键盘：WebHID 要求 requestDevice() 必须由用户手势触发，所以只能走按钮点击。
@@ -147,22 +150,29 @@ export function DevicePicker({ open, onOpenChange }: DevicePickerProps): React.J
         <div className="flex flex-col gap-2">
           {/* 传输方式切换：没有它就无法从 Dummy 切到真实键盘 */}
           <div className="flex items-center gap-1 rounded-card border border-border bg-elevated p-1">
-            {(['dummy', 'webhid'] as const).map((kind) => (
-              <button
-                key={kind}
-                type="button"
-                onClick={() => void switchTransport(kind)}
-                className={cn(
-                  'flex-1 rounded px-2 py-1 text-xs transition-colors',
-                  transportKind === kind
-                    ? 'bg-accent-soft text-accent'
-                    : 'text-fg-muted hover:bg-surface hover:text-fg',
-                )}
-              >
-                {kind === 'dummy' ? 'Dummy 模拟设备' : '真实键盘（WebHID）'}
-              </button>
-            ))}
+            {(['dummy', 'nodehid', 'webhid'] as const)
+              .filter((kind) => kind !== 'nodehid' || isTauri)
+              .map((kind) => (
+                <button
+                  key={kind}
+                  type="button"
+                  onClick={() => void switchTransport(kind)}
+                  className={cn(
+                    'flex-1 rounded px-2 py-1 text-xs transition-colors',
+                    transportKind === kind
+                      ? 'bg-accent-soft text-accent'
+                      : 'text-fg-muted hover:bg-surface hover:text-fg',
+                  )}
+                >
+                  {kind === 'dummy' ? 'Dummy 模拟设备' : kind === 'nodehid' ? '原生键盘（Native）' : '真实键盘（WebHID）'}
+                </button>
+              ))}
           </div>
+          {transportKind === 'nodehid' ? (
+            <p className="rounded-card border border-border bg-elevated px-2 py-1.5 text-[11px] text-fg-dim">
+              Tauri 原生 hidapi 桥：无需授权，插上键盘点「刷新设备列表」即可发现。
+            </p>
+          ) : null}
           {/* 过滤开关：默认只显示我们能控制的键盘，关掉即可看到全部已授权 HID（调试/救急） */}
           <div className="flex items-center justify-between gap-2 rounded-card border border-border bg-elevated px-2 py-1.5">
             <div className="min-w-0">
@@ -212,11 +222,13 @@ export function DevicePicker({ open, onOpenChange }: DevicePickerProps): React.J
 
           {devices.length === 0 ? (
             <p className="rounded-card border border-dashed border-border px-3 py-6 text-center text-xs text-fg-dim">
-              {transportKind !== 'webhid'
+              {transportKind === 'dummy'
                 ? '暂无模拟设备，点击右下角刷新重试'
-                : showAllDevices
-                  ? '还没有已授权的 HID 设备。请先点上方「授权键盘…」，在弹出的选择器里选中你的键盘。'
-                  : '没有检测到可控制的键盘。请先点上方「授权键盘…」；若列表仍为空，可关闭顶部过滤开关，或用「授权：显示全部 HID 设备」按钮。'}
+                : transportKind === 'nodehid'
+                  ? '没有检测到可控制的键盘。请插上键盘后点「刷新设备列表」。'
+                  : showAllDevices
+                    ? '还没有已授权的 HID 设备。请先点上方「授权键盘…」，在弹出的选择器里选中你的键盘。'
+                    : '没有检测到可控制的键盘。请先点上方「授权键盘…」；若列表仍为空，可关闭顶部过滤开关，或用「授权：显示全部 HID 设备」按钮。'}
             </p>
           ) : (
             devices.map((device) => {
