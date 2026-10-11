@@ -33,6 +33,11 @@ export class DeviceFacade {
   private definition: ParsedDefinition | null;
   private readonly writeQueue: ValueWriteQueue;
   private readonly verified = new Set<string>();
+  /**
+   * 回读不可靠地址集（BugFix C）：写入已成功（SET 无异常）但回读校验不一致或探测失败的地址。
+   * UI 依据此集合在重水合时保留用户乐观值，不让固件坏回读覆盖用户输入。
+   */
+  private readonly unreliableReadback = new Set<string>();
   private readonly onWarning?: (warning: ProtocolWarning) => void;
   private opened = false;
   /** 宏缓冲区总字节数缓存（连接后由 getMacroSize 回填，未连接时取 64 兜底）。 */
@@ -175,6 +180,14 @@ export class DeviceFacade {
 
   // —— 自定义值 ——
 
+  /**
+   * 某地址的回读是否不可靠（写入成功但回读校验不一致 / 探测失败）。
+   * UI 重水合（menuLoad）应保留该地址的用户乐观值（BugFix C）。
+   */
+  isReadbackUnreliable(addressKeyStr: string): boolean {
+    return this.unreliableReadback.has(addressKeyStr);
+  }
+
   async readValue(control: ControlSpec, overrides?: WidthOverrides): Promise<number> {
     const width = inferWidth(control, overrides ?? loadOverrides());
     return this.protocol.customGetValue(control.address, width);
@@ -259,17 +272,30 @@ export class DeviceFacade {
     // alt 只做**读取**探测以给出建议宽度，最终是否覆盖由用户在调试面板决定。
     if (!this.verified.has(key)) {
       this.verified.add(key);
-      const readBack = await this.protocol.customGetValue(control.address, width);
-      if (readBack !== (value >>> 0)) {
-        const alt = width === 1 ? 2 : 1;
-        const altRead = await this.protocol.customGetValue(control.address, alt);
+      // ⚠️ 探测全程 try/catch（BugFix A）：回读探测失败（超时/断连）绝不能把错误抛回
+      // 写入链路——SET 已经成功，设备已收到值；探测挂了只影响「校验」，不影响「写入」。
+      try {
+        const readBack = await this.protocol.customGetValue(control.address, width);
+        if (readBack !== (value >>> 0)) {
+          const alt = width === 1 ? 2 : 1;
+          const altRead = await this.protocol.customGetValue(control.address, alt);
+          // 回读不可靠（BugFix C）：UI 保留乐观值的依据
+          this.unreliableReadback.add(key);
+          this.onWarning?.({
+            level: 'warn',
+            title: '值宽度可能不正确',
+            detail:
+              altRead === (value >>> 0)
+                ? `地址 ${key} 使用 ${alt} 字节回读一致，可在调试面板把宽度覆盖为 ${alt}`
+                : `地址 ${key} 回读不一致（写入 ${value}，读回 ${readBack}）`,
+          });
+        }
+      } catch (e) {
+        this.unreliableReadback.add(key);
         this.onWarning?.({
           level: 'warn',
-          title: '值宽度可能不正确',
-          detail:
-            altRead === (value >>> 0)
-              ? `地址 ${key} 使用 ${alt} 字节回读一致，可在调试面板把宽度覆盖为 ${alt}`
-              : `地址 ${key} 回读不一致（写入 ${value}，读回 ${readBack}）`,
+          title: '回读校验失败',
+          detail: `地址 ${key} 写入已完成，但回读校验未完成（${e instanceof Error ? e.message : String(e)}），界面值以用户输入为准`,
         });
       }
     }

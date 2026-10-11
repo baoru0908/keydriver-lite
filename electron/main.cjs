@@ -16,6 +16,21 @@ const path = require('path');
 // 表现就是「官方 VIA 能识别、我们的应用读不到设备」。Electron 官方文档给出的解法就是关掉它。
 app.commandLine.appendSwitch('disable-hid-blocklist');
 
+// 单实例锁（BugFix B）：WebHID 设备同一时刻只能被一个实例独占，双实例会互相抢占——
+// 第二实例连接失败或两个实例写入全挂（QA 观察到用户机器上双 KeyDriver 进程并存）。
+// 标准桌面实践：抢锁失败直接退出（第二进程秒退，用户落回已有窗口）；再次启动时聚焦已有窗口。
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
+
 let mainWindow = null;
 /** 渲染进程推送的未保存改动数（keydriver:setDirtyCount）；关窗门控依据。 */
 let dirtyCount = 0;

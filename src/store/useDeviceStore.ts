@@ -339,7 +339,15 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
     let done = 0;
     for (const control of controls) {
       try {
-        entries.push({ control, value: await active.readValue(control) });
+        const value = await active.readValue(control);
+        // BugFix C：回读不可靠的地址（写入成功但固件回读恒 0 / 校验失败），
+        // 保留用户已输入的乐观值，不让固件坏回读覆盖界面（衔接 f631fff 反清零）。
+        const key = addressKey(control.address);
+        const existing = useMenuStore.getState().addressValues[key];
+        entries.push({
+          control,
+          value: existing !== undefined && active.isReadbackUnreliable(key) ? existing : value,
+        });
       } catch {
         // 单个控件读失败不阻断整菜单：保留默认值，错误已由门面记录到调试面板
       }
