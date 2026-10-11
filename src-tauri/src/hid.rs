@@ -51,6 +51,24 @@ fn err(kind: &str, msg: impl Into<String>) -> String {
     format!("{kind}:{}", msg.into())
 }
 
+/// 帧级落盘日志（env 门控）：KEYDRIVER_HID_LOG=1 时把每次 tx/rx 追加到 /tmp/keydriver-hid.log，
+/// 用于真机定位滑块/写入链路问题。不打开关零开销。
+fn log_frame(dir: &str, bytes: &[u8], note: &str) {
+    if std::env::var("KEYDRIVER_HID_LOG").map(|v| v != "1").unwrap_or(true) {
+        return;
+    }
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
+    let line = format!("{} {} {} {}\n", ts, dir, hex, note);
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/keydriver-hid.log") {
+        let _ = f.write_all(line.as_bytes());
+    }
+}
+
 /// 打开失败/读写失败后复查设备是否还在总线上；不在则视为断连并广播。
 fn emit_if_gone(app: &AppHandle, path: &str) -> bool {
     let gone = {
@@ -83,6 +101,7 @@ fn spawn_disconnect_poller(app: AppHandle, path: String) {
         };
         if !present {
             *opened_guard() = None;
+            log_frame("EVT", path.as_bytes(), "poll-disconnect");
             let _ = app.emit("hid://disconnect", path);
             return;
         }
@@ -136,6 +155,7 @@ pub fn hid_open(app: AppHandle, path: String) -> Result<NativeDeviceInfo, String
         (dev, info)
     };
     *opened_guard() = Some(OpenedDevice { device: dev, path: path.clone() });
+    log_frame("EVT", path.as_bytes(), "opened");
     spawn_disconnect_poller(app, path);
     Ok(info)
 }
@@ -185,6 +205,7 @@ pub fn hid_transfer(app: AppHandle, request: Vec<u8>, timeout_ms: Option<u32>) -
     out[1..].copy_from_slice(&frame);
 
     if let Err(e) = o.device.write(&out) {
+        log_frame("TX", &out, "write-err");
         let path = o.path.clone();
         drop(guard);
         if emit_if_gone(&app, &path) {
@@ -192,20 +213,26 @@ pub fn hid_transfer(app: AppHandle, request: Vec<u8>, timeout_ms: Option<u32>) -
         }
         return Err(err("ERROR", format!("写入失败：{e}")));
     }
+    log_frame("TX", &out, "");
 
     // 读：先按 33 收（兼容带 report-id 的固件），33 → 剥首字节；32 → 原样（探针实测本固件即此形态）
     let timeout = timeout_ms.unwrap_or(1000).clamp(1, 30_000) as i32;
     let mut buf = [0u8; MSG_LEN + 1];
     match o.device.read_timeout(&mut buf, timeout) {
-        Ok(n) if n == 0 => Err(err("TIMEOUT", "固件响应超时")),
+        Ok(n) if n == 0 => {
+            log_frame("RX", &buf, "timeout-0bytes");
+            Err(err("TIMEOUT", "固件响应超时"))
+        }
         Ok(n) => {
             let data: &[u8] = if n == MSG_LEN + 1 { &buf[1..] } else { &buf[..n] };
             let mut resp = [0u8; MSG_LEN];
             let take = data.len().min(MSG_LEN);
             resp[..take].copy_from_slice(&data[..take]);
+            log_frame("RX", &resp, "");
             Ok(resp.to_vec())
         }
         Err(e) => {
+            log_frame("RX", &buf, "read-err");
             let path = o.path.clone();
             drop(guard);
             if emit_if_gone(&app, &path) {
