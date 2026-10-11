@@ -146,11 +146,19 @@ export class NativeHidTransport implements HidTransport {
     if (this.disconnectBound || !this.isSupported()) return;
     this.disconnectBound = true;
     const { listen } = await import('@tauri-apps/api/event');
-    await listen<string>('hid://disconnect', () => {
-      const info = this.current;
-      this.current = null;
-      if (info) for (const cb of this.disconnectCbs) cb(info);
-    });
+    const { note } = await import('@/shared/note');
+    try {
+      await listen<string>('hid://disconnect', (event) => {
+        void note(`hid-disconnect-event-received payload=${String(event.payload)}`);
+        const info = this.current;
+        this.current = null;
+        if (info) for (const cb of this.disconnectCbs) cb(info);
+      });
+      void note('hid-disconnect-listen-ok');
+    } catch (e) {
+      this.disconnectBound = false;
+      void note(`hid-disconnect-listen-fail:${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   private async transferOnce(request: Uint8Array, timeoutMs?: number): Promise<Uint8Array> {

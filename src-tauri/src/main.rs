@@ -12,6 +12,7 @@ fn main() {
             hid::hid_close,
             hid::hid_feature_get,
             hid::hid_feature_send,
+            hid::debug_note,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

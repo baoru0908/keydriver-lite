@@ -10,7 +10,12 @@ fn hex(bytes: &[u8]) -> String {
 
 fn main() {
     let do_write = std::env::args().any(|a| a == "--write");
-    println!("== 桥设备级诊断（write={do_write}）==");
+    // --effect N：写效果模式 N（v2），含 CUSTOM_SAVE 持久化，验证固件是否需要保存才生效
+    let effect_mode: Option<u8> = std::env::args()
+        .position(|a| a == "--effect")
+        .and_then(|i| std::env::args().nth(i + 1))
+        .and_then(|s| s.parse().ok());
+    println!("== 桥设备级诊断（write={do_write} effect={effect_mode:?}）==");
 
     let api = HidApi::new().expect("HidApi");
     let info = api
@@ -85,6 +90,32 @@ fn main() {
         f[2] = 0x02;
         exchange("[5] GET ch3/v2", f, 500);
         std::thread::sleep(Duration::from_millis(120));
+    }
+
+    // [6] 效果模式语义验证：SET v2=mode → GET 回读 → CUSTOM_SAVE → GET 再读
+    // 用户在 App 里选效果不生效时，用这个判断是固件语义（需 SAVE/地址错）还是 App 问题
+    if let Some(mode) = effect_mode {
+        let mut f = [0u8; 32];
+        f[0] = 0x07;
+        f[1] = 0x03;
+        f[2] = 0x02;
+        f[3] = mode;
+        exchange(&format!("[6] SET ch3/v2={mode}"), f, 500);
+        let mut f = [0u8; 32];
+        f[0] = 0x08;
+        f[1] = 0x03;
+        f[2] = 0x02;
+        exchange("[6] GET ch3/v2 回读", f, 500);
+        let mut f = [0u8; 32];
+        f[0] = 0x09; // CUSTOM_SAVE：把通道 3 的脏值持久化/提交
+        f[1] = 0x03;
+        exchange("[6] CUSTOM_SAVE ch3", f, 500);
+        let mut f = [0u8; 32];
+        f[0] = 0x08;
+        f[1] = 0x03;
+        f[2] = 0x02;
+        exchange("[6] GET ch3/v2 SAVE 后", f, 500);
+        println!("  → 现在看键盘：灯效有没有变成模式 {mode}？（变=固件即时生效；不变=固件需其它触发，把此输出发回）");
     }
 
     println!("== 诊断完成 ==");

@@ -6,6 +6,7 @@
 //     与真机验证过的 react-colorful useDrag 同款（其源码即绑 mouse 事件而非 pointer 事件）。
 import { useCallback, useRef } from 'react';
 import { cn } from '@/shared/cn';
+import { note } from '@/shared/note';
 
 export interface SliderProps {
   readonly value: number;
@@ -56,6 +57,7 @@ export function Slider({
     e.preventDefault();
     draggingRef.current = true;
     onChange(valueFromClientX(e.clientX));
+    let lastNoteAt = 0;
     const move = (ev: MouseEvent): void => {
       if (!draggingRef.current) return;
       if (ev.buttons === 0) {
@@ -64,14 +66,22 @@ export function Slider({
       }
       ev.preventDefault();
       onChange(valueFromClientX(ev.clientX));
+      // 诊断：拖动期间 mousemove 是否派发/节流（100ms 采样）
+      const now = Date.now();
+      if (now - lastNoteAt > 100) {
+        lastNoteAt = now;
+        void note(`slider-move clientX=${ev.clientX} buttons=${ev.buttons}`);
+      }
     };
     const stop = (): void => {
       draggingRef.current = false;
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', stop);
+      void note('slider-up');
     };
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', stop);
+    void note(`slider-down clientX=${e.clientX} value=${cfg.value}`);
   };
 
   /** 触摸路径：与 react-colorful 同款（touchmove + touches[0]），preventDefault 防页面滚动。 */

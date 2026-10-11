@@ -317,17 +317,30 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
    * AppShell 挂载时调用一次。
    */
   autoReconnect: async () => {
+    const { note } = await import('@/shared/note');
     const saved = readRememberedDevice();
-    if (saved === null) return false;
+    if (saved === null) {
+      void note('auto-reconnect: no memory');
+      return false;
+    }
+    void note(`auto-reconnect: memory vid=0x${saved.vendorId.toString(16)} pid=0x${saved.productId.toString(16)}`);
     await get().refreshDevices();
-    const match = get().devices.find(
+    const devices = get().devices;
+    void note(`auto-reconnect: listed ${devices.length} devices`);
+    const match = devices.find(
       (d) =>
         d.vendorId === saved.vendorId &&
         d.productId === saved.productId &&
         (saved.serialNumber === null || d.serialNumber === saved.serialNumber),
     );
-    if (!match) return false;
-    return get().connect(match.id);
+    if (!match) {
+      void note('auto-reconnect: no match');
+      return false;
+    }
+    void note(`auto-reconnect: matching ${match.productName}, initiating connection`);
+    const ok = await get().connect(match.id);
+    void note(`auto-reconnect: connect=${ok ? 'ok' : 'fail'}`);
+    return ok;
   },
 
   /**

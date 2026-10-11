@@ -63,10 +63,28 @@ fn log_frame(dir: &str, bytes: &[u8], note: &str) {
         .unwrap_or(0);
     let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ");
     let line = format!("{} {} {} {}\n", ts, dir, hex, note);
+    write_log_line(&line);
+}
+
+/// 前端诊断通道：写纯文本行（前端 invoke debug_note，env 门控同上）。
+fn write_log_line(line: &str) {
+    if std::env::var("KEYDRIVER_HID_LOG").map(|v| v != "1").unwrap_or(true) {
+        return;
+    }
     use std::io::Write;
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/keydriver-hid.log") {
         let _ = f.write_all(line.as_bytes());
     }
+}
+
+#[tauri::command(async)]
+pub fn debug_note(text: String) -> Result<(), String> {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    write_log_line(&format!("{ts} NOTE {text}\n"));
+    Ok(())
 }
 
 /// 打开失败/读写失败后复查设备是否还在总线上；不在则视为断连并广播。
