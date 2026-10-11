@@ -1,4 +1,5 @@
-// 设备选择：列出可用设备 + 连接/断开 + 「Dummy 模拟设备」入口。
+// 设备选择：列出可用设备 + 连接/断开。
+// Dummy 模拟设备已从 UI 移除（工厂/store 保留，供测试与无硬件演练复用）。
 import { useEffect, useState } from 'react';
 import { Cpu, Link2, Link2Off, Usb } from 'lucide-react';
 import { Button } from '@/ui/primitives/Button';
@@ -56,8 +57,8 @@ export function DevicePicker({ open, onOpenChange }: DevicePickerProps): React.J
     void probeGranted();
   }, [open, transportKind]);
 
-  /** 切换传输方式：Dummy 模拟设备 ↔ 真实键盘（WebHID）↔ 原生键盘（Tauri hidapi 桥）。 */
-  const switchTransport = async (kind: 'dummy' | 'webhid' | 'nodehid'): Promise<void> => {
+  /** 切换传输方式：原生键盘（Tauri hidapi 桥）↔ 真实键盘（WebHID）。 */
+  const switchTransport = async (kind: 'webhid' | 'nodehid'): Promise<void> => {
     if (kind === transportKind) return;
     setTransportKind(kind);
     await refreshDevices();
@@ -65,6 +66,10 @@ export function DevicePicker({ open, onOpenChange }: DevicePickerProps): React.J
 
   /** 原生 hidapi 桥只在 Tauri 桌面外壳里可用。 */
   const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  const webHidAvailable = webHidSupported;
+  const transportOptions = (['nodehid', 'webhid'] as const).filter((kind) =>
+    kind === 'nodehid' ? isTauri : webHidAvailable,
+  );
 
   /**
    * 授权真实键盘：WebHID 要求 requestDevice() 必须由用户手势触发，所以只能走按钮点击。
@@ -131,7 +136,7 @@ export function DevicePicker({ open, onOpenChange }: DevicePickerProps): React.J
         open={open}
         onOpenChange={onOpenChange}
         title="选择设备"
-        description="Dummy 模拟设备无需硬件即可跑通全链路；接真实键盘请切到「真实键盘」并点「授权键盘…」（WebHID 需由点击触发授权）。默认只列出可控制的键盘，关掉开关可看全部 HID 设备。"
+        description="接真实键盘：桌面外壳走原生 hidapi（无需授权）；浏览器/Electron 走 WebHID（需点击授权）。默认只列出可控制的键盘，关掉开关可看全部 HID 设备。"
         footer={
           connected ? (
             <Button
@@ -148,11 +153,10 @@ export function DevicePicker({ open, onOpenChange }: DevicePickerProps): React.J
         }
       >
         <div className="flex flex-col gap-2">
-          {/* 传输方式切换：没有它就无法从 Dummy 切到真实键盘 */}
-          <div className="flex items-center gap-1 rounded-card border border-border bg-elevated p-1">
-            {(['dummy', 'nodehid', 'webhid'] as const)
-              .filter((kind) => kind !== 'nodehid' || isTauri)
-              .map((kind) => (
+          {/* 传输方式切换：可用方式不止一种时才显示，单一方式不占版面 */}
+          {transportOptions.length > 1 ? (
+            <div className="flex items-center gap-1 rounded-card border border-border bg-elevated p-1">
+              {transportOptions.map((kind) => (
                 <button
                   key={kind}
                   type="button"
@@ -164,10 +168,11 @@ export function DevicePicker({ open, onOpenChange }: DevicePickerProps): React.J
                       : 'text-fg-muted hover:bg-surface hover:text-fg',
                   )}
                 >
-                  {kind === 'dummy' ? 'Dummy 模拟设备' : kind === 'nodehid' ? '原生键盘（Native）' : '真实键盘（WebHID）'}
+                  {kind === 'nodehid' ? '原生键盘（Native）' : '真实键盘（WebHID）'}
                 </button>
               ))}
-          </div>
+            </div>
+          ) : null}
           {transportKind === 'nodehid' ? (
             <p className="rounded-card border border-border bg-elevated px-2 py-1.5 text-[11px] text-fg-dim">
               Tauri 原生 hidapi 桥：无需授权，插上键盘点「刷新设备列表」即可发现。
@@ -222,13 +227,11 @@ export function DevicePicker({ open, onOpenChange }: DevicePickerProps): React.J
 
           {devices.length === 0 ? (
             <p className="rounded-card border border-dashed border-border px-3 py-6 text-center text-xs text-fg-dim">
-              {transportKind === 'dummy'
-                ? '暂无模拟设备，点击右下角刷新重试'
-                : transportKind === 'nodehid'
-                  ? '没有检测到可控制的键盘。请插上键盘后点「刷新设备列表」。'
-                  : showAllDevices
-                    ? '还没有已授权的 HID 设备。请先点上方「授权键盘…」，在弹出的选择器里选中你的键盘。'
-                    : '没有检测到可控制的键盘。请先点上方「授权键盘…」；若列表仍为空，可关闭顶部过滤开关，或用「授权：显示全部 HID 设备」按钮。'}
+              {transportKind === 'nodehid'
+                ? '没有检测到可控制的键盘。请插上键盘后点「刷新设备列表」。'
+                : showAllDevices
+                  ? '还没有已授权的 HID 设备。请先点上方「授权键盘…」，在弹出的选择器里选中你的键盘。'
+                  : '没有检测到可控制的键盘。请先点上方「授权键盘…」；若列表仍为空，可关闭顶部过滤开关，或用「授权：显示全部 HID 设备」按钮。'}
             </p>
           ) : (
             devices.map((device) => {

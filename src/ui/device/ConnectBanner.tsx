@@ -60,7 +60,7 @@ export function ConnectBanner({
           ) : state === 'error' ? (
             <p className="text-danger">{error ?? '连接失败'}</p>
           ) : (
-            <p>已加载定义，但未连接设备。可选择 Dummy 模拟设备在无硬件情况下体验完整流程。</p>
+            <p>已加载定义，但未连接设备。点击右上角「选择设备」连接你的键盘；曾连接过的设备会在启动时自动重连。</p>
           )}
           {hints.map((hint) => (
             <p key={hint} className="mt-1 text-caption text-fg-dim">

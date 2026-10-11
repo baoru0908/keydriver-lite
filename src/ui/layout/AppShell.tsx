@@ -9,6 +9,7 @@ import { PanelRightOpen } from 'lucide-react';
 import { useUiStore } from '@/store/useUiStore';
 import { useKeymapStore } from '@/store/useKeymapStore';
 import { useMenuStore } from '@/store/useMenuStore';
+import { useDeviceStore } from '@/store/useDeviceStore';
 import { getBridge } from '@/shared/bridge';
 import { createDirtyReporter } from '@/shared/dirtyCount';
 import { useBreakpoint } from '@/shared/useBreakpoint';
@@ -78,6 +79,11 @@ export function AppShell({ onImportDefinition }: AppShellProps): React.JSX.Eleme
     }
     prevNarrow.current = narrow;
   });
+
+  // 启动自动重连：曾连接过的设备在列表里出现即静默重连（模块级标记防 StrictMode 双跑）。
+  useEffect(() => {
+    void useDeviceStore.getState().autoReconnect();
+  }, []);
 
   // T06-3：把两个 store 的脏计数聚合后经唯一 bridge 推给主进程（关窗拦截门控）。
   useEffect(() => {

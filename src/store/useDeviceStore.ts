@@ -80,6 +80,8 @@ interface DeviceState {
   menuTrigger: (control: ControlSpec) => Promise<boolean>;
   /** 把全部脏值刷入设备并逐个地址持久化（0x09） */
   menuSaveAll: () => Promise<number>;
+  /** 启动时自动重连上次连接过的设备（记忆在 localStorage）；无记忆/设备不在时返回 false */
+  autoReconnect: () => Promise<boolean>;
   /** 撤销会话中最近一次变更（R-P1-07） */
   undoLast: () => Promise<boolean>;
   undoDepth: () => number;
@@ -147,8 +149,64 @@ export function getFacade(): DeviceFacade | null {
 
 const EMPTY_DEVICES: readonly HidDeviceInfo[] = [];
 
+/** 记忆设备的 localStorage 键（下次启动自动重连用）。 */
+const LAST_DEVICE_KEY = 'keydriver.lastDevice';
+
+/** 按运行环境选默认传输：Tauri → 原生桥；有 WebHID → WebHID；测试/兜底 → Dummy。 */
+function defaultTransportKind(): TransportKind {
+  if (typeof window === 'undefined') return 'dummy';
+  if ('__TAURI_INTERNALS__' in window) return 'nodehid';
+  if (typeof navigator !== 'undefined' && 'hid' in navigator) return 'webhid';
+  return 'dummy';
+}
+
+/** 记忆本次连接成功的设备（隐私模式等 localStorage 不可用时静默跳过）。 */
+function rememberDevice(device: HidDeviceInfo): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(
+      LAST_DEVICE_KEY,
+      JSON.stringify({
+        vendorId: device.vendorId,
+        productId: device.productId,
+        productName: device.productName,
+        serialNumber: device.serialNumber ?? null,
+      }),
+    );
+  } catch {
+    // localStorage 不可用（隐私模式/配额）：记忆失败不影响连接本身
+  }
+}
+
+interface RememberedDevice {
+  readonly vendorId: number;
+  readonly productId: number;
+  readonly productName: string;
+  readonly serialNumber: string | null;
+}
+
+function readRememberedDevice(): RememberedDevice | null {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(LAST_DEVICE_KEY);
+    if (raw === null) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      typeof (parsed as RememberedDevice).vendorId === 'number' &&
+      typeof (parsed as RememberedDevice).productId === 'number'
+    ) {
+      return parsed as RememberedDevice;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export const useDeviceStore = create<DeviceState>((set, get) => ({
-  transportKind: 'dummy',
+  transportKind: defaultTransportKind(),
   devices: EMPTY_DEVICES,
   selectedDeviceId: null,
   state: 'disconnected',
@@ -215,6 +273,7 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
       });
       const result = await facade.connect();
       set({ state: 'connected', handshake: result, layoutOptions: result.layoutOptions, busy: false, devices: list });
+      rememberDevice(device);
       await get().reloadKeymap();
       return true;
     } catch (e) {
@@ -250,6 +309,25 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
     set({ state: 'disconnected', handshake: null, busy: false });
     useKeymapStore.getState().reset();
     useMenuStore.getState().reset();
+  },
+
+  /**
+   * 启动自动重连：读取记忆的上次设备，在当前列表里按 VID/PID（+序列号）匹配后静默重连。
+   * 记忆在每次 connect 成功时写入（rememberDevice）；拔出/lost 不清除——设备重新插上仍可连。
+   * AppShell 挂载时调用一次。
+   */
+  autoReconnect: async () => {
+    const saved = readRememberedDevice();
+    if (saved === null) return false;
+    await get().refreshDevices();
+    const match = get().devices.find(
+      (d) =>
+        d.vendorId === saved.vendorId &&
+        d.productId === saved.productId &&
+        (saved.serialNumber === null || d.serialNumber === saved.serialNumber),
+    );
+    if (!match) return false;
+    return get().connect(match.id);
   },
 
   /**
