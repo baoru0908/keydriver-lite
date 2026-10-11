@@ -10,6 +10,10 @@
 //
 // 表情由 mood 驱动眼形 / 嘴形 / 泪滴 / 小手，覆盖界面会遇到的场景。
 // a11y：整体 role="img" + aria-label（角色名 + 情绪），纯装饰处由调用方 aria-hidden。
+//
+// 素材可插拔：把官方图放进 `public/mascots/<who>-<mood>.png`（命名见文件末尾说明），
+// 再把下面的 MASCOT_USE_ASSETS 改成 true，即可用官方素材替换手绘版（加载失败自动回退手绘）。
+import { useState } from 'react';
 import { cn } from '@/shared/cn';
 
 export type MascotWho = 'chiikawa' | 'hachiware' | 'usagi';
@@ -27,6 +31,18 @@ const BLUSH = '#ffbfcb'; // 腮红
 const EYE = '#3d352c'; // 眼
 const PATCH = '#7d8a99'; // 哈奇头顶分头斑（蓝灰）
 const EAR_IN = '#f2c9d2'; // 耳内粉
+
+/**
+ * 是否使用 public/mascots 下的官方素材。默认 false（用手绘版，零额外请求）。
+ * 拿到官方图后：放好文件 → 改这里为 true → 立即生效，组件代码无需改动。
+ */
+export const MASCOT_USE_ASSETS = false;
+
+const ASSET_BASE = '/mascots';
+
+export function mascotAssetUrl(who: MascotWho, mood: MascotMood): string {
+  return `${ASSET_BASE}/${who}-${mood}.png`;
+}
 
 export interface MascotProps {
   readonly who?: MascotWho;
@@ -129,6 +145,22 @@ export function Mascot({
 }: MascotProps): React.JSX.Element {
   const moodLabel =
     mood === 'happy' ? '开心' : mood === 'wait' ? '等待' : mood === 'peek' ? '张望' : mood === 'worry' ? '担心' : '平常';
+  const [assetFailed, setAssetFailed] = useState(false);
+
+  // 官方素材优先：文件缺失 / 加载失败时回退手绘版，界面不会开天窗
+  if (MASCOT_USE_ASSETS && !assetFailed) {
+    return (
+      <img
+        src={mascotAssetUrl(who, mood)}
+        width={size}
+        height={size}
+        alt={`${MASCOT_NAMES[who]}（${moodLabel}）`}
+        className={cn(animate && 'animate-pop', className)}
+        style={style}
+        onError={() => setAssetFailed(true)}
+      />
+    );
+  }
 
   return (
     <svg
