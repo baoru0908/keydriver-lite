@@ -1,13 +1,10 @@
 // UI 偏好状态：主题、当前面板、侧栏折叠、色空间与值宽度/自定义键码基址等校准项（Q3/Q4/A5）。
 import { create } from 'zustand';
+// 主题预设单一数据源：类型与循环顺序都来自 ui/layout/themes.ts，避免两处漂移。
+import { THEME_CYCLE, isThemePreference, type ThemeMode, type ThemePreference } from '@/ui/layout/themes';
 
-/** 已解析的实际主题（挂载到 <html> 的 class）。新增主题只需在 ThemeMode 加字面量 + CSS 变量覆盖。 */
-export type ThemeMode = 'dark' | 'light' | 'aurora';
-/** 用户偏好：system = 跟随系统并实时响应变化；其余为手动锁定。 */
-export type ThemePreference = 'system' | ThemeMode;
-
-/** 主题循环顺序（TopBar 切换按钮 / 快捷键共用）。 */
-const THEME_CYCLE: readonly ThemeMode[] = ['light', 'dark', 'aurora'];
+/** 已解析的实际主题（挂载到 <html> 的 class）。 */
+export type { ThemeMode, ThemePreference };
 export type PanelId = 'keymap' | 'layout' | 'debug' | 'menu' | 'backup' | 'device' | 'macros';
 export type ColorSpace = 'hsv' | 'rgb' | 'grb';
 
@@ -29,7 +26,7 @@ const DEFAULT_PREFS: UiPrefs = {
 interface UiState extends UiPrefs {
   /** 已解析的实际主题（组件只消费它做视觉判断） */
   theme: ThemeMode;
-  /** 用户偏好（持久化）：system / light / dark / aurora */
+  /** 用户偏好（持久化）：system 或某个主题预设 id */
   themePreference: ThemePreference;
   currentPanel: PanelId;
   sidebarOpen: boolean;
@@ -43,7 +40,7 @@ interface UiState extends UiPrefs {
   /** 当前打开的自定义菜单 id（来自定义文件，零硬编码） */
   currentMenuId: string | null;
   setThemePreference: (pref: ThemePreference) => void;
-  /** 在 light → dark → aurora 之间循环（手动选择，写入偏好） */
+  /** 在主题预设之间循环（手动选择，写入偏好） */
   toggleTheme: () => void;
   setCurrentPanel: (panel: PanelId) => void;
   toggleSidebar: (open?: boolean) => void;
@@ -82,11 +79,15 @@ function systemTheme(): ThemeMode {
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 }
 
-/** 读取持久化的主题偏好；旧版本存的 'dark'/'light' 直接作为锁定值兼容。 */
+/**
+ * 读取持久化的主题偏好。
+ * 兼容策略：旧版本存的是 'dark' / 'light' / 'aurora'，这些 id 至今仍合法，直接沿用；
+ * 任何非法值（手改 / 旧实验值）一律回落 system，避免挂上不存在的 class 变成无样式。
+ */
 function loadThemePreference(): ThemePreference {
   try {
     const saved = localStorage.getItem(THEME_KEY);
-    if (saved === 'system' || saved === 'dark' || saved === 'light' || saved === 'aurora') return saved;
+    if (isThemePreference(saved)) return saved;
   } catch {
     // localStorage 不可用：默认跟随系统
   }

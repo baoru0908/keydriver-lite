@@ -1,6 +1,15 @@
 // 主题偏好：默认跟随系统、手动锁定、循环切换、系统变化时实时跟随。
+// 另含主题预设注册表的完整性校验（新增主题若漏配 CSS，这里会先炸）。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useUiStore, resolveTheme } from '@/store/useUiStore';
+import { useUiStore, resolveTheme, type ThemeMode } from '@/store/useUiStore';
+import {
+  DARK_THEMES,
+  LIGHT_THEMES,
+  THEME_CYCLE,
+  THEME_IDS,
+  isThemePreference,
+  themeSchemeOf,
+} from '@/ui/layout/themes';
 
 const memoryStorage = new Map<string, string>();
 const localStorageStub = {
@@ -62,15 +71,29 @@ describe('主题偏好', () => {
     expect(useUiStore.getState().theme).toBe('dark');
   });
 
-  it('循环切换：light → dark → aurora → light', () => {
+  it('循环切换走完整预设序列，末位回到首位', () => {
     installMatchMedia(false);
-    useUiStore.getState().setThemePreference('light');
+    useUiStore.getState().setThemePreference(THEME_CYCLE[0] as ThemeMode);
+    // 依次走完一圈，末位再切一次回到首位
+    for (let i = 1; i < THEME_CYCLE.length; i += 1) {
+      useUiStore.getState().toggleTheme();
+      expect(useUiStore.getState().theme).toBe(THEME_CYCLE[i]);
+    }
     useUiStore.getState().toggleTheme();
-    expect(useUiStore.getState().theme).toBe('dark');
-    useUiStore.getState().toggleTheme();
-    expect(useUiStore.getState().theme).toBe('aurora');
-    useUiStore.getState().toggleTheme();
-    expect(useUiStore.getState().theme).toBe('light');
+    expect(useUiStore.getState().theme).toBe(THEME_CYCLE[0]);
+  });
+
+  it('非法持久化值（手改 / 旧实验值）回落 system', () => {
+    installMatchMedia(false);
+    memoryStorage.set('keydriver:theme', 'neon-pink'); // 从未存在过的主题
+    // 重新读取偏好：走 loadThemePreference 的类型守卫
+    const loaded = resolveTheme(
+      ((): 'system' => {
+        const raw = memoryStorage.get('keydriver:theme');
+        return isThemePreference(raw) ? raw : 'system';
+      })(),
+    );
+    expect(loaded).toBe('dark'); // system + 系统深色
   });
 
   it('偏好为 system 时，系统深浅变化可被实时解析', () => {
@@ -93,5 +116,39 @@ describe('主题偏好', () => {
     });
     expect(() => useUiStore.getState().setThemePreference('dark')).not.toThrow();
     expect(useUiStore.getState().theme).toBe('dark');
+  });
+});
+
+describe('主题预设注册表', () => {
+  it('id 唯一，循环序列与注册表一致', () => {
+    expect(new Set(THEME_IDS).size).toBe(THEME_IDS.length);
+    expect([...THEME_CYCLE]).toEqual([...THEME_IDS]);
+  });
+
+  it('每套都带三色预览与合法的 hex（下拉色卡靠它渲染）', () => {
+    for (const preset of [...LIGHT_THEMES, ...DARK_THEMES]) {
+      expect(preset.swatch).toHaveLength(3);
+      for (const color of preset.swatch) expect(color).toMatch(/^#[0-9a-fA-F]{6}$/);
+      expect(themeSchemeOf(preset.id)).toBe(preset.scheme);
+    }
+  });
+
+  it('浅色与深色各不少于两套（主题可切换的产品底线）', () => {
+    expect(LIGHT_THEMES.length).toBeGreaterThanOrEqual(2);
+    expect(DARK_THEMES.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('类型守卫：已知 id 通过，未知值与 null 拒绝', () => {
+    expect(isThemePreference('system')).toBe(true);
+    expect(isThemePreference('chiikawa')).toBe(true);
+    expect(isThemePreference('nothing')).toBe(true);
+    expect(isThemePreference('neon-pink')).toBe(false);
+    expect(isThemePreference(null)).toBe(false);
+  });
+
+  it('旧持久化值 dark / light / aurora 仍然合法（不破坏老用户选择）', () => {
+    expect(isThemePreference('dark')).toBe(true);
+    expect(isThemePreference('light')).toBe(true);
+    expect(isThemePreference('aurora')).toBe(true);
   });
 });

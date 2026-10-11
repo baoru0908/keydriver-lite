@@ -706,3 +706,273 @@ html.theme-anim *::after {
     animation-iteration-count: infinite !important;
   }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * 主题预设包（配色 + 材质）：每套 = 一组变量覆盖，组件零改动。
+ *
+ * 材质是主题的「手感」，不只是颜色——每套都同时定义：
+ *   · --blur-glass  毛玻璃强度（Nothing 为 0：纯平无模糊，硬派点阵）
+ *   · --radius-*    圆角标尺（吉伊卡哇 16/20：圆润；Nothing 4/6：硬朗）
+ *   · --shadow-*    阴影基调（浅色用低透明暖灰；深色用近黑）
+ *   · --color-glow-* 光效色（决定发光边颜色）
+ *
+ * 对比度：强调色在各自底色上均 ≥ 4.5:1（正文）/ ≥ 3:1（大字与 UI 组件），
+ * 主按钮「浅色文字 on accent」配深调 accent，避免浅底浅字糊成一团。
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 吉伊卡哇：奶油底 + 樱花粉，大圆角、软阴影、强模糊（可爱通透）───────── */
+html.theme-chiikawa {
+  --color-bg: #fff8ec;
+  --color-surface: #ffffff;
+  --color-panel: #fff2df;
+  --color-elevated: #ffffff;
+  --color-border: #f2dfc7;
+  --color-border-strong: #e5c9a8;
+  --color-fg: #4a3b33;
+  --color-fg-muted: #8a7466;
+  --color-fg-dim: #b09a8b;
+  --color-accent: #c9245e;
+  --color-accent-strong: #a81a4c;
+  --color-accent-soft: #ffe0ea;
+  --color-danger: #c8443d;
+  --color-danger-soft: #ffe6e3;
+  --color-warn: #a9701f;
+  --color-warn-soft: #fff0d8;
+  --color-success: #3f8f5e;
+  --color-success-soft: #e0f4e7;
+  --color-info: #3d78ab;
+  --color-info-soft: #e2eefb;
+  --color-key-base: #ffe8d6;
+  --color-key-mod: #fbdcc4;
+  --color-key-accent: #f6cdae;
+  --color-key-special: #fff3e6;
+
+  --shadow-e1: 0 1px 2px rgb(140 90 70 / 0.06);
+  --shadow-e2: 0 2px 8px rgb(140 90 70 / 0.09);
+  --shadow-e3: 0 10px 24px rgb(140 90 70 / 0.12);
+  --shadow-e4: 0 18px 44px rgb(140 90 70 / 0.15);
+
+  --color-glass-bg: rgb(255 255 255 / 0.78);
+  --color-glass-bg-strong: rgb(255 255 255 / 0.9);
+  --color-glass-border: rgb(74 59 51 / 0.08);
+  --color-hairline: rgb(255 255 255 / 0.95);
+  --blur-glass: 18px;
+  --color-glow-accent: rgb(201 36 94 / 0.28);
+  --color-glow-danger: rgb(200 68 61 / 0.22);
+  --shadow-glow: 0 0 0 1px rgb(201 36 94 / 0.18), 0 10px 24px -12px var(--color-glow-accent);
+  --shadow-glow-danger: 0 0 0 1px rgb(200 68 61 / 0.2), 0 10px 24px -12px var(--color-glow-danger);
+  --shadow-inset-hl: inset 0 1px 0 0 var(--color-hairline);
+
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-card: 16px;
+  --radius-lg: 20px;
+  --radius-xl: 24px;
+  --radius-key: 12px;
+}
+
+/* ── 抹茶：米白 + 抹茶绿，自然柔和 ──────────────────────────────────────── */
+html.theme-matcha {
+  --color-bg: #f4f7ee;
+  --color-surface: #ffffff;
+  --color-panel: #eaf1e0;
+  --color-elevated: #ffffff;
+  --color-border: #dde6d0;
+  --color-border-strong: #c2d1ae;
+  --color-fg: #33402c;
+  --color-fg-muted: #6b7a5f;
+  --color-fg-dim: #95a389;
+  --color-accent: #4f7a35;
+  --color-accent-strong: #3d6027;
+  --color-accent-soft: #e2f0d6;
+  --color-danger: #b04a3f;
+  --color-danger-soft: #fbe6e2;
+  --color-warn: #96701d;
+  --color-warn-soft: #f8eed3;
+  --color-success: #4f7a35;
+  --color-success-soft: #e2f0d6;
+  --color-info: #35708f;
+  --color-info-soft: #dfecf5;
+  --color-key-base: #e8efdd;
+  --color-key-mod: #dbe6cb;
+  --color-key-accent: #ccdab6;
+  --color-key-special: #f0f5e8;
+
+  --shadow-e1: 0 1px 2px rgb(40 60 30 / 0.06);
+  --shadow-e2: 0 2px 8px rgb(40 60 30 / 0.08);
+  --shadow-e3: 0 8px 24px rgb(40 60 30 / 0.1);
+  --shadow-e4: 0 16px 48px rgb(40 60 30 / 0.13);
+
+  --color-glass-bg: rgb(255 255 255 / 0.76);
+  --color-glass-bg-strong: rgb(255 255 255 / 0.88);
+  --color-glass-border: rgb(51 64 44 / 0.08);
+  --color-hairline: rgb(255 255 255 / 0.92);
+  --blur-glass: 16px;
+  --color-glow-accent: rgb(79 122 53 / 0.26);
+  --color-glow-danger: rgb(176 74 63 / 0.2);
+  --shadow-glow: 0 0 0 1px rgb(79 122 53 / 0.16), 0 10px 24px -12px var(--color-glow-accent);
+  --shadow-glow-danger: 0 0 0 1px rgb(176 74 63 / 0.18), 0 10px 24px -12px var(--color-glow-danger);
+  --shadow-inset-hl: inset 0 1px 0 0 var(--color-hairline);
+
+  --radius-xs: 5px;
+  --radius-sm: 8px;
+  --radius-card: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-key: 9px;
+}
+
+/* ── 奶茶：暖棕奶调，低饱和耐看 ────────────────────────────────────────── */
+html.theme-milk {
+  --color-bg: #f7f1e8;
+  --color-surface: #fffdfa;
+  --color-panel: #f0e7db;
+  --color-elevated: #ffffff;
+  --color-border: #e3d7c7;
+  --color-border-strong: #cbb9a3;
+  --color-fg: #3d332b;
+  --color-fg-muted: #7a6a5b;
+  --color-fg-dim: #a3907e;
+  --color-accent: #8f5a33;
+  --color-accent-strong: #71442a;
+  --color-accent-soft: #f3e3d2;
+  --color-danger: #b34a41;
+  --color-danger-soft: #fae6e3;
+  --color-warn: #96701d;
+  --color-warn-soft: #f8eed3;
+  --color-success: #4f7f4b;
+  --color-success-soft: #e3f0e1;
+  --color-info: #46759a;
+  --color-info-soft: #e1ecf5;
+  --color-key-base: #eee3d5;
+  --color-key-mod: #e2d3c0;
+  --color-key-accent: #d4c1aa;
+  --color-key-special: #f6efe4;
+
+  --shadow-e1: 0 1px 2px rgb(80 60 40 / 0.06);
+  --shadow-e2: 0 2px 8px rgb(80 60 40 / 0.08);
+  --shadow-e3: 0 8px 24px rgb(80 60 40 / 0.1);
+  --shadow-e4: 0 16px 48px rgb(80 60 40 / 0.13);
+
+  --color-glass-bg: rgb(255 253 250 / 0.75);
+  --color-glass-bg-strong: rgb(255 253 250 / 0.88);
+  --color-glass-border: rgb(61 51 43 / 0.08);
+  --color-hairline: rgb(255 255 255 / 0.92);
+  --blur-glass: 16px;
+  --color-glow-accent: rgb(143 90 51 / 0.26);
+  --color-glow-danger: rgb(179 74 65 / 0.2);
+  --shadow-glow: 0 0 0 1px rgb(143 90 51 / 0.16), 0 10px 24px -12px var(--color-glow-accent);
+  --shadow-glow-danger: 0 0 0 1px rgb(179 74 65 / 0.18), 0 10px 24px -12px var(--color-glow-danger);
+  --shadow-inset-hl: inset 0 1px 0 0 var(--color-hairline);
+
+  --radius-xs: 5px;
+  --radius-sm: 8px;
+  --radius-card: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-key: 9px;
+}
+
+/* ── Nothing：纯黑点阵，零模糊、直角、红色点缀（硬派极简）───────────────── */
+html.theme-nothing {
+  --color-bg: #000000;
+  --color-surface: #0a0a0a;
+  --color-panel: #111111;
+  --color-elevated: #161616;
+  --color-border: #242424;
+  --color-border-strong: #3d3d3d;
+  --color-fg: #f5f5f5;
+  --color-fg-muted: #a3a3a3;
+  --color-fg-dim: #6e6e6e;
+  --color-accent: #ff3b30;
+  --color-accent-strong: #d92d24;
+  --color-accent-soft: #2a0f0d;
+  --color-danger: #ff453a;
+  --color-danger-soft: #2c1210;
+  --color-warn: #ffd60a;
+  --color-warn-soft: #2a2409;
+  --color-success: #30d158;
+  --color-success-soft: #0d2415;
+  --color-info: #8e8e93;
+  --color-info-soft: #1c1c1e;
+  --color-key-base: #1c1c1e;
+  --color-key-mod: #262629;
+  --color-key-accent: #333336;
+  --color-key-special: #141416;
+
+  --shadow-e1: 0 1px 2px rgb(0 0 0 / 0.5);
+  --shadow-e2: 0 2px 8px rgb(0 0 0 / 0.55);
+  --shadow-e3: 0 12px 32px rgb(0 0 0 / 0.6);
+  --shadow-e4: 0 24px 64px rgb(0 0 0 / 0.68);
+
+  /* 材质：不要毛玻璃——点阵风格要的是「平」和「硬边」 */
+  --color-glass-bg: rgb(255 255 255 / 0.04);
+  --color-glass-bg-strong: rgb(255 255 255 / 0.07);
+  --color-glass-border: rgb(255 255 255 / 0.09);
+  --color-hairline: rgb(255 255 255 / 0.06);
+  --blur-glass: 0px;
+  --color-glow-accent: rgb(255 59 48 / 0.3);
+  --color-glow-danger: rgb(255 69 58 / 0.28);
+  --shadow-glow: 0 0 0 1px rgb(255 59 48 / 0.3), 0 8px 22px -10px var(--color-glow-accent);
+  --shadow-glow-danger: 0 0 0 1px rgb(255 69 58 / 0.3), 0 8px 22px -10px var(--color-glow-danger);
+  --shadow-inset-hl: inset 0 1px 0 0 var(--color-hairline);
+
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-card: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-key: 3px;
+}
+
+/* ── 赛博霓虹：品红 + 青，强发光（深色高饱和）───────────────────────────── */
+html.theme-cyber {
+  --color-bg: #080a14;
+  --color-surface: #0e1220;
+  --color-panel: #121728;
+  --color-elevated: #1a2038;
+  --color-border: #232a45;
+  --color-border-strong: #33406b;
+  --color-fg: #eaf0ff;
+  --color-fg-muted: #9aa6cc;
+  --color-fg-dim: #6d78a0;
+  --color-accent: #ff4fd8;
+  --color-accent-strong: #e02fbb;
+  --color-accent-soft: #33104a;
+  --color-danger: #ff5c7a;
+  --color-danger-soft: #33101c;
+  --color-warn: #ffcf5c;
+  --color-warn-soft: #332a10;
+  --color-success: #3ef2b0;
+  --color-success-soft: #0d3325;
+  --color-info: #35d6ff;
+  --color-info-soft: #0d2b38;
+  --color-key-base: #1b2237;
+  --color-key-mod: #232c47;
+  --color-key-accent: #2d3859;
+  --color-key-special: #141a2c;
+
+  --shadow-e1: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-e2: 0 2px 10px rgb(0 0 0 / 0.45);
+  --shadow-e3: 0 12px 32px rgb(0 0 0 / 0.5);
+  --shadow-e4: 0 24px 64px rgb(0 0 0 / 0.58);
+
+  --color-glass-bg: rgb(255 255 255 / 0.05);
+  --color-glass-bg-strong: rgb(255 255 255 / 0.09);
+  --color-glass-border: rgb(255 255 255 / 0.13);
+  --color-hairline: rgb(255 255 255 / 0.08);
+  --blur-glass: 12px;
+  /* 霓虹主题的光效更强：这是它的性格 */
+  --color-glow-accent: rgb(255 79 216 / 0.45);
+  --color-glow-danger: rgb(255 92 122 / 0.4);
+  --shadow-glow: 0 0 0 1px rgb(255 79 216 / 0.35), 0 10px 30px -8px var(--color-glow-accent);
+  --shadow-glow-danger: 0 0 0 1px rgb(255 92 122 / 0.32), 0 10px 30px -8px var(--color-glow-danger);
+  --shadow-inset-hl: inset 0 1px 0 0 var(--color-hairline);
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-card: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-key: 4px;
+}

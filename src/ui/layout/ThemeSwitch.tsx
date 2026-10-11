@@ -1,30 +1,60 @@
-// 主题切换：下拉选择（跟随系统 / 浅色 / 深色 / 极光），键盘可达 + 本地持久化。
+// 主题切换：下拉选择「主题预设」（跟随系统 + 4 套浅色 + 4 套深色），键盘可达 + 本地持久化。
 //
 // 交互与可访问性：
 //  · 触发器 aria-haspopup="menu" + aria-expanded；面板 role="menu"，选项 role="menuitemradio" + aria-checked
 //  · ↑/↓ 循环移动焦点，Home/End 跳首尾，Enter/Space 选中，Esc 关闭并把焦点还回触发器
-//  · 点击外部关闭；挂载/卸载不做动画（动效由 useUiStore/ThemeProvider 的主题过渡统一承载）
+//  · 每项带三色预览（底色 / 表面 / 强调色），色值来自主题注册表，与 CSS 令牌同源
+//  · 点击外部关闭；退场由 closing 标记驱动（播放 animate-pop-out 后再卸载）
 import { useEffect, useRef, useState } from 'react';
-import { Monitor, Moon, Palette, Sun } from 'lucide-react';
+import { Check, Monitor, Moon, Palette, Sun } from 'lucide-react';
 import { useUiStore, type ThemePreference } from '@/store/useUiStore';
+import { DARK_THEMES, LIGHT_THEMES, type ThemePreset } from '@/ui/layout/themes';
 import { cn } from '@/shared/cn';
 
 interface ThemeOption {
   readonly value: ThemePreference;
   readonly label: string;
   readonly hint: string;
-  readonly icon: typeof Sun;
+  /** 预设主题的三色预览；跟随系统没有固定配色，用图标代替 */
+  readonly swatch?: readonly [string, string, string];
 }
 
-const OPTIONS: readonly ThemeOption[] = [
-  { value: 'system', label: '跟随系统', hint: '自动匹配系统深浅色', icon: Monitor },
-  { value: 'light', label: '浅色', hint: '明亮通透', icon: Sun },
-  { value: 'dark', label: '深色', hint: '低光环境更舒适', icon: Moon },
-  { value: 'aurora', label: '极光', hint: '青紫渐变 extended', icon: Palette },
+function presetOption(preset: ThemePreset): ThemeOption {
+  return { value: preset.id, label: preset.label, hint: preset.hint, swatch: preset.swatch };
+}
+
+const SYSTEM_OPTION: ThemeOption = {
+  value: 'system',
+  label: '跟随系统',
+  hint: '自动匹配系统深浅色',
+};
+
+const LIGHT_OPTIONS: readonly ThemeOption[] = LIGHT_THEMES.map(presetOption);
+const DARK_OPTIONS: readonly ThemeOption[] = DARK_THEMES.map(presetOption);
+
+/** 分组 + 扁平索引：键盘导航按扁平顺序走，分组标题不可聚焦。 */
+const GROUPS: readonly { readonly title: string | null; readonly items: readonly ThemeOption[] }[] = [
+  { title: null, items: [SYSTEM_OPTION] },
+  { title: '浅色', items: LIGHT_OPTIONS },
+  { title: '深色', items: DARK_OPTIONS },
 ];
+
+const OPTIONS: readonly ThemeOption[] = GROUPS.flatMap((group) => group.items);
+
+/** 三色预览：帮用户在切换前就「看见」配色，而不是盲选名字。 */
+function Swatch({ colors }: { readonly colors: readonly [string, string, string] }): React.JSX.Element {
+  return (
+    <span aria-hidden className="mt-0.5 flex shrink-0 overflow-hidden rounded-xs border border-border-strong/50">
+      {colors.map((color) => (
+        <span key={color} className="h-3.5 w-3.5" style={{ backgroundColor: color }} />
+      ))}
+    </span>
+  );
+}
 
 export function ThemeSwitch(): React.JSX.Element {
   const preference = useUiStore((s) => s.themePreference);
+  const theme = useUiStore((s) => s.theme);
   const setPreference = useUiStore((s) => s.setThemePreference);
   const [open, setOpen] = useState(false);
   /** 正在播放退场动画（此间菜单仍在 DOM 中，播完才卸载）。 */
@@ -33,8 +63,10 @@ export function ThemeSwitch(): React.JSX.Element {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
-  const current = OPTIONS.find((o) => o.value === preference) ?? OPTIONS[0];
-  const CurrentIcon = current?.icon ?? Monitor;
+  const current = OPTIONS.find((o) => o.value === preference) ?? SYSTEM_OPTION;
+  // 触发器图标表达「明暗归属」：跟随系统用显示器，其余按当前实际主题的 scheme 给日/月
+  const CurrentIcon =
+    preference === 'system' ? Monitor : DARK_THEMES.some((p) => p.id === theme) ? Moon : Sun;
 
   // 点击外部 / 失焦关闭（focusout 保证键盘 Tab 走开也会收起）
   useEffect(() => {
@@ -99,6 +131,9 @@ export function ThemeSwitch(): React.JSX.Element {
     }
   };
 
+  /** 分组渲染时的扁平索引游标（键盘导航按它定位，每次渲染归位）。 */
+  let flatIndex = -1;
+
   return (
     <div ref={rootRef} className="relative">
       <button
@@ -125,12 +160,18 @@ export function ThemeSwitch(): React.JSX.Element {
           role="menu"
           aria-label="主题偏好"
           className={cn(
-            'glass-panel absolute right-0 top-full z-50 mt-1.5 w-52 rounded-lg p-1',
+            'glass-panel absolute right-0 top-full z-50 mt-1.5 max-h-[70vh] w-60 overflow-y-auto rounded-lg p-1',
             closing ? 'animate-pop-out pointer-events-none' : 'animate-pop',
           )}
         >
-          {OPTIONS.map((option, index) => {
-            const Icon = option.icon;
+          {GROUPS.map((group) => (
+            <div key={group.title ?? 'system'}>
+              {group.title ? (
+                <div className="px-2 pb-0.5 pt-1.5 text-caption text-fg-dim">{group.title}</div>
+              ) : null}
+              {group.items.map((option) => {
+            flatIndex += 1;
+            const index = flatIndex;
             const active = option.value === preference;
             return (
               <button
@@ -152,14 +193,20 @@ export function ThemeSwitch(): React.JSX.Element {
                   active ? 'bg-accent-soft text-accent' : 'text-fg-muted hover:bg-elevated hover:text-fg',
                 )}
               >
-                <Icon size={14} className="mt-0.5 shrink-0" />
+                {option.swatch ? <Swatch colors={option.swatch} /> : <Monitor size={14} className="mt-0.5 shrink-0" />}
                 <span className="min-w-0 flex-1">
                   <span className="block text-xs font-medium">{option.label}</span>
                   <span className="block text-caption text-fg-dim">{option.hint}</span>
                 </span>
+                {active ? <Check size={13} className="mt-0.5 shrink-0" aria-hidden /> : null}
               </button>
-            );
-          })}
+              );
+              })}
+            </div>
+          ))}
+          <div className="mt-0.5 flex items-center gap-1 border-t border-border px-2 pt-1.5 text-caption text-fg-dim">
+            <Palette size={11} aria-hidden /> 深浅与材质随主题切换
+          </div>
         </div>
       ) : null}
     </div>

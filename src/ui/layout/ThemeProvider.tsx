@@ -7,6 +7,7 @@
 //  · prefers-reduced-motion 下由 CSS 全局把过渡时长归零，此处无需额外判断
 import { useEffect, type ReactNode } from 'react';
 import { useUiStore, resolveTheme } from '@/store/useUiStore';
+import { THEME_IDS, themeSchemeOf, type ThemeMode } from '@/ui/layout/themes';
 import { getBridge } from '@/shared/bridge';
 
 /** 过渡 class 存活时长：与 --duration-slow（320ms）对齐。 */
@@ -18,11 +19,12 @@ function currentBg(root: HTMLElement): string | null {
   return /^#[0-9a-f]{6}$/i.test(bg) ? bg : null;
 }
 
-function applyThemeClass(root: HTMLElement, mode: string): void {
-  root.classList.toggle('theme-dark', mode === 'dark');
-  root.classList.toggle('theme-light', mode === 'light');
-  root.classList.toggle('theme-aurora', mode === 'aurora');
-  root.style.colorScheme = mode === 'light' ? 'light' : 'dark';
+/** 挂主题 class：先摘掉所有已知主题类，再挂当前一个（多留一个都会互相覆盖变量）。 */
+function applyThemeClass(root: HTMLElement, mode: ThemeMode): void {
+  for (const id of THEME_IDS) {
+    root.classList.toggle(`theme-${id}`, id === mode);
+  }
+  root.style.colorScheme = themeSchemeOf(mode);
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }): React.JSX.Element {
