@@ -162,6 +162,13 @@ pub fn hid_list() -> Result<Vec<NativeDeviceInfo>, String> {
             via_capable: is_via,
         });
     }
+    // 诊断：枚举摘要（total / via 命中数）落盘，env 门控，关掉零开销
+    let via_count = out.iter().filter(|d| d.via_capable).count();
+    write_log_line(&format!(
+        "NOTE hid-list total={} via={}\n",
+        out.len(),
+        via_count
+    ));
     Ok(out)
 }
 
