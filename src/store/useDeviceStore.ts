@@ -672,3 +672,61 @@ export function dummyConfigFromDefinition(): Partial<DummyConfig> {
     layerCount: 4,
   };
 }
+
+// —— 热插拔看门狗（R3 补全）——
+// hidapi 没有设备到达事件（macOS），WebHID 的 connect 事件在部分内核也不可靠；
+// 未连接状态下周期性重扫设备列表：插上键盘 → 列表自动出现 → 记忆设备自动重连。
+const HOTPLUG_INTERVAL_MS = 2000;
+
+let watchTimer: ReturnType<typeof setInterval> | null = null;
+/** 防重入：上一轮枚举还没回来时不叠加（枚举走 IPC/USB，串行最稳）。 */
+let polling = false;
+
+/**
+ * 单次到达轮询（导出仅供测试与看门狗复用）：
+ *  - 仅在 disconnected / lost 态生效（connected 有断连轮询管，error 交给用户处理）；
+ *  - 发现记忆设备（viaCapable + VID/PID + 序列号）即静默重连。
+ */
+export async function pollDeviceArrivalOnce(): Promise<void> {
+  if (polling) return;
+  const { state, busy } = useDeviceStore.getState();
+  if (busy || (state !== 'disconnected' && state !== 'lost')) return;
+  polling = true;
+  try {
+    await useDeviceStore.getState().refreshDevices();
+    const saved = readRememberedDevice();
+    if (saved === null) return;
+    // 与 autoReconnect 同一套匹配口径：必须限 viaCapable（多接口复合设备的 vid/pid 相同）
+    const match = useDeviceStore
+      .getState()
+      .devices.find(
+        (d) =>
+          d.viaCapable === true &&
+          d.vendorId === saved.vendorId &&
+          d.productId === saved.productId &&
+          (saved.serialNumber === null || d.serialNumber === saved.serialNumber),
+      );
+    if (match) await useDeviceStore.getState().connect(match.id);
+  } catch {
+    // 轮询失败静默：下一轮再试
+  } finally {
+    polling = false;
+  }
+}
+
+/** 启动热插拔看门狗（幂等）。AppShell 挂载时调用。 */
+export function startHotplugWatch(): void {
+  if (watchTimer !== null || typeof window === 'undefined') return;
+  watchTimer = setInterval(() => {
+    void pollDeviceArrivalOnce();
+  }, HOTPLUG_INTERVAL_MS);
+}
+
+/** 停止看门狗（测试清理用）。 */
+export function stopHotplugWatch(): void {
+  if (watchTimer !== null) {
+    clearInterval(watchTimer);
+    watchTimer = null;
+  }
+  polling = false;
+}
