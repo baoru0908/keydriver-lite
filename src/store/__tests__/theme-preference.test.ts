@@ -1,7 +1,7 @@
 // 主题偏好：默认跟随系统、手动锁定、循环切换、系统变化时实时跟随。
 // 另含主题预设注册表的完整性校验（新增主题若漏配 CSS，这里会先炸）。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useUiStore, resolveTheme, type ThemeMode } from '@/store/useUiStore';
+import { useUiStore, resolveTheme, type ThemeMode, type ThemePreference } from '@/store/useUiStore';
 import {
   DARK_THEMES,
   LIGHT_THEMES,
@@ -86,14 +86,13 @@ describe('主题偏好', () => {
   it('非法持久化值（手改 / 旧实验值）回落 system', () => {
     installMatchMedia(false);
     memoryStorage.set('keydriver:theme', 'neon-pink'); // 从未存在过的主题
-    // 重新读取偏好：走 loadThemePreference 的类型守卫
-    const loaded = resolveTheme(
-      ((): 'system' => {
-        const raw = memoryStorage.get('keydriver:theme');
-        return isThemePreference(raw) ? raw : 'system';
-      })(),
-    );
-    expect(loaded).toBe('dark'); // system + 系统深色
+    // 模拟 loadThemePreference 的读取路径：类型守卫 + 回落
+    const loadedPref: ThemePreference = ((): ThemePreference => {
+      const raw: unknown = memoryStorage.get('keydriver:theme');
+      return isThemePreference(raw) ? raw : 'system';
+    })();
+    expect(loadedPref).toBe('system');
+    expect(resolveTheme(loadedPref)).toBe('dark'); // system + 系统深色
   });
 
   it('偏好为 system 时，系统深浅变化可被实时解析', () => {
