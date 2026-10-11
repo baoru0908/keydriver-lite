@@ -1,5 +1,5 @@
 {
-  "name": "keydriver",
+  "name": "keydriver-lite",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -62,8 +62,8 @@
     "electron": "^44.7.0"
   },
   "build": {
-    "appId": "com.keydriver.app",
-    "productName": "KeyDriver",
+    "appId": "com.keydriver.lite",
+    "productName": "KeyDriver Lite",
     "directories": {
       "output": "release"
     },

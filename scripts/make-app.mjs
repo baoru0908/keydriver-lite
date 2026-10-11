@@ -8,21 +8,30 @@
 //   Contents/Resources 即可，全程零额外下载。
 //
 // 产物布局（与 electron/main.cjs 的生产加载路径严格对应）：
-//   KeyDriver.app/Contents/Resources/app/main.cjs   ← 主进程
-//   KeyDriver.app/Contents/Resources/dist/index.html ← 渲染进程（main.cjs 用 '../dist' 取）
+//   KeyDriver Lite.app/Contents/Resources/app/main.cjs   ← 主进程
+//   KeyDriver Lite.app/Contents/Resources/dist/index.html ← 渲染进程（main.cjs 用 '../dist' 取）
 //   main.cjs 中 __dirname = .../Resources/app，故 '../dist' = .../Resources/dist ✓
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+//
+// Lite 裁剪（KeyDriver Lite 专属，对应 docs/SIZE-REDUCTION-EVAL.md §5 阶段 A 账目）：
+//   第 3.5 步在注入资源之后、codesign 之前删除非中英 locale / swiftshader / ffmpeg /
+//   default_app.asar。**顺序必须先裁后签**——签名后再删文件会破坏签名，应用启动即退出。
+import { access, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
+import os from 'node:os';
 import path from 'node:path';
 
 const ROOT = process.cwd();
 const ELECTRON_APP = path.join(ROOT, 'node_modules/electron/dist/Electron.app');
 const OUT_DIR = path.join(ROOT, 'release');
-const OUT_APP = path.join(OUT_DIR, 'KeyDriver.app');
-const PLIST = path.join(OUT_APP, 'Contents/Info.plist');
 
-const APP_ID = 'com.keydriver.app';
-const APP_NAME = 'KeyDriver';
+// 应用身份从 package.json 读取（Lite 与主版共用同一份脚本逻辑，只随 package.json 改变）。
+// 产物名 "KeyDriver Lite.app" 含空格：所有子进程调用走 execFileSync 参数数组，
+// 路径空格由 Node 自动处理，无 shell 注入/截断风险。
+const PKG = JSON.parse(await readFile(path.join(ROOT, 'package.json'), 'utf8'));
+const APP_ID = PKG.build?.appId ?? 'com.keydriver.lite';
+const APP_NAME = PKG.build?.productName ?? 'KeyDriver Lite';
+const OUT_APP = path.join(OUT_DIR, `${APP_NAME}.app`);
+const PLIST = path.join(OUT_APP, 'Contents/Info.plist');
 
 async function exists(p) {
   try {
@@ -36,6 +45,45 @@ async function exists(p) {
 function fail(msg) {
   console.error(`✗ ${msg}`);
   process.exit(1);
+}
+
+/** 目录/文件实际占用（du -sk，单位 KB）；目标不存在返回 0。用于裁剪账目实测。 */
+function diskKb(p) {
+  try {
+    return Number.parseInt(execFileSync('du', ['-sk', p]).toString(), 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function mb(kb) {
+  return (kb / 1024).toFixed(1);
+}
+
+/**
+ * 删除单个文件（防御式）：先常规 rm；失败时退化为改名移入系统临时目录。
+ * 背景：某些受限环境（沙箱/EDR）禁止删除带 com.apple.provenance 扩展属性的文件，
+ * 但允许 rename——移入 tmpdir 由系统按临时文件回收，效果等同删除。
+ * 返回是否成功移除（目标不存在视为 true）。
+ */
+async function removeFileRobust(p) {
+  try {
+    await access(p);
+  } catch {
+    return true; // 目标本就不存在（Electron 版本结构变化），裁剪项自然缺席
+  }
+  try {
+    await rm(p, { force: true });
+    return true;
+  } catch {
+    try {
+      const trashName = `keydriver-lite-trash-${process.pid}-${path.basename(p)}`;
+      await rename(p, path.join(os.tmpdir(), trashName));
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
 
 async function main() {
@@ -76,11 +124,11 @@ async function main() {
   const resApp = path.join(OUT_APP, 'Contents/Resources/app');
   await mkdir(resApp, { recursive: true });
 
-  const pkg = JSON.parse(await readFile(path.join(ROOT, 'package.json'), 'utf8'));
+  const pkg = PKG;
   await writeFile(
     path.join(resApp, 'package.json'),
     JSON.stringify(
-      { name: 'keydriver', productName: APP_NAME, version: pkg.version ?? '0.1.0', main: 'main.cjs' },
+      { name: pkg.name ?? 'keydriver-lite', productName: APP_NAME, version: pkg.version ?? '0.1.0', main: 'main.cjs' },
       null,
       2,
     ),
@@ -93,6 +141,78 @@ async function main() {
   await rm(path.join(OUT_APP, 'Contents/Resources/dist'), { recursive: true, force: true });
   execFileSync('cp', ['-R', path.join(ROOT, 'dist'), path.join(OUT_APP, 'Contents/Resources/dist')]);
   console.log('✓ 已注入主进程与构建产物');
+
+  // 3.5 阶段 A 裁剪（Lite 专属）：删除不影响本应用运行的 Electron 运行时外围文件。
+  //
+  // 依据：docs/SIZE-REDUCTION-EVAL.md §1 体积解剖 + §5 阶段 A 账目。
+  // ⚠️ 顺序约束：必须在第 5 步 codesign **之前**执行——签名后再删文件会破坏
+  //    CodeSignature，应用启动即退出。
+  // ⚠️ 不可删项（本步骤全部用精确路径删除，glob 只匹配 *.lproj，不会误伤）：
+  //    - icudtl.dat（10M，国际化字符集，删了 Chromium 崩）
+  //    - resources.pak（12M，Chromium 资源清单，删了崩）
+  //    - chrome_200_percent.pak（1.2M，Retina 缩放资源，评估结论建议保留）
+  const sizeBeforeTrim = diskKb(OUT_APP);
+  const fwRes = path.join(OUT_APP, 'Contents/Frameworks/Electron Framework.framework/Versions/A/Resources');
+  const fwLib = path.join(OUT_APP, 'Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries');
+  const appRes = path.join(OUT_APP, 'Contents/Resources');
+
+  // 账目记录：[{ label, savedKb }]
+  const trimLog = [];
+
+  // ① 非中英语言包（账目：~659 文件 / ~47M）：只保留 en.lproj 与 zh_CN.lproj。
+  //    本应用 UI 语言为中文/英文，其余 200+ 种 .lproj 纯属 Electron 全量分发。
+  //    electron-builder 路径已由 package.json 的 electronLanguages: ["en","zh"] 声明，
+  //    这里把同一口径固化进手工打包。
+  let localeSaved = 0;
+  let localeDirs = 0;
+  const KEEP_LOCALES = new Set(['en.lproj', 'zh_CN.lproj']);
+  for (const dir of [fwRes, appRes]) {
+    let entries = [];
+    try {
+      entries = await readdir(dir);
+    } catch {
+      continue; // 目录不存在（结构变化）则跳过，防御式不失败
+    }
+    for (const name of entries) {
+      if (!name.endsWith('.lproj') || KEEP_LOCALES.has(name)) continue;
+      const target = path.join(dir, name);
+      localeSaved += diskKb(target);
+      localeDirs += 1;
+      await rm(target, { recursive: true, force: true });
+    }
+  }
+  trimLog.push({ label: `非中英语言包（${localeDirs} 个 .lproj 目录）`, savedKb: localeSaved });
+
+  // ② libvk_swiftshader.dylib + vk_swiftshader_icd.json（账目：~16M）：软件渲染回退
+  //    （SwiftShader WebGL）。本应用是纯 2D DOM 界面，GPU 回退用不到。
+  //    链接证据（otool 全 bundle 扫描，QA 回归轮 2 修正）：bundle 内没有任何 Mach-O 的
+  //    LC_LOAD_DYLIB 引用它（Electron Framework 只硬链 libffmpeg），它是经
+  //    vk_swiftshader_icd.json 按需动态加载的 Vulkan ICD —— 可删；icd 清单必须随删，
+  //    否则 Vulkan loader 扫到悬空 manifest。
+  const swiftshader = path.join(fwLib, 'libvk_swiftshader.dylib');
+  const swiftshaderKb = diskKb(swiftshader);
+  trimLog.push({ label: 'libvk_swiftshader.dylib', savedKb: (await removeFileRobust(swiftshader)) ? swiftshaderKb : 0 });
+  const swiftshaderIcd = path.join(fwLib, 'vk_swiftshader_icd.json');
+  const swiftshaderIcdKb = diskKb(swiftshaderIcd);
+  trimLog.push({ label: 'vk_swiftshader_icd.json', savedKb: (await removeFileRobust(swiftshaderIcd)) ? swiftshaderIcdKb : 0 });
+
+  // ③ libffmpeg.dylib —— **不可删，已回退**（QA 回归轮 2）。
+  //    otool -L 证据：Electron Framework 的 LC_LOAD_DYLIB 硬依赖 @rpath/libffmpeg.dylib，
+  //    删除后 dyld 解析失败 → SIGABRT 启动即崩。即使应用无音视频播放需求也无法裁剪。
+
+  // ④ default_app.asar（账目：~112K）：Electron 自带示例应用，被我们的 app/ 完全取代。
+  //    非 Mach-O、无链接依赖，可安全删除。
+  const defaultApp = path.join(appRes, 'default_app.asar');
+  const defaultAppKb = diskKb(defaultApp);
+  trimLog.push({ label: 'default_app.asar', savedKb: (await removeFileRobust(defaultApp)) ? defaultAppKb : 0 });
+
+  const sizeAfterTrim = diskKb(OUT_APP);
+  const totalSaved = sizeBeforeTrim - sizeAfterTrim;
+  console.log('✓ 阶段 A 裁剪完成（先裁后签）：');
+  for (const { label, savedKb } of trimLog) {
+    console.log(`    - ${label}：省 ${mb(savedKb)}M`);
+  }
+  console.log(`    裁剪前 ${mb(sizeBeforeTrim)}M → 裁剪后 ${mb(sizeAfterTrim)}M（共省 ${mb(totalSaved)}M，-${Math.round((totalSaved / Math.max(1, sizeBeforeTrim)) * 100)}%）`);
 
   // 4. 改写应用身份信息
   for (const [key, value] of [
