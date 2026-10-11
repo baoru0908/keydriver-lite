@@ -72,12 +72,20 @@ interface DeviceState {
   applyKeycode: (layer: number, row: number, col: number, keycode: number) => Promise<boolean>;
   applyLayoutOptions: (value: number) => Promise<void>;
   // —— 菜单（T04）——
-  /** 懒加载某菜单的全部控件值（含被 showIf 隐藏的，因为要做条件变量） */
-  menuLoad: (menuId: string) => Promise<void>;
+  /**
+   * 懒加载某菜单的全部控件值（含被 showIf 隐藏的，因为要做条件变量）。
+   * silent=true 用于连接后预载：只读不刷状态条，避免加载态闪烁。
+   */
+  menuLoad: (menuId: string, options?: { readonly silent?: boolean }) => Promise<void>;
   /** 乐观更新内存值 + 下发写入（range/color 走 200ms 防抖） */
   menuCommit: (control: ControlSpec, value: number) => Promise<boolean>;
   /** button 类动作：options 原样透传，执行后探活，设备消失则按断开处理 */
   menuTrigger: (control: ControlSpec) => Promise<boolean>;
+  /**
+   * 连接后预载全部菜单值：**只读**，把设备当前配置读进界面（读优先语义）。
+   * 连接/重连后界面必须呈现设备真实值，绝不允许拿默认值冒充——否则用户一动控件就把配置写没了。
+   */
+  menuPreloadAll: () => Promise<void>;
   /** 把全部脏值刷入设备并逐个地址持久化（0x09） */
   menuSaveAll: () => Promise<number>;
   /** 启动时自动重连上次连接过的设备（记忆在 localStorage）；无记忆/设备不在时返回 false */
@@ -282,6 +290,8 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
       set({ state: 'connected', handshake: result, layoutOptions: result.layoutOptions, busy: false, devices: list });
       rememberDevice(device);
       await get().reloadKeymap();
+      // 读优先：把设备当前配置读进界面（只读，零写入）——界面必须呈现设备真实值
+      await get().menuPreloadAll();
       return true;
     } catch (e) {
       const info = toErrorInfo(e);
@@ -428,14 +438,15 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
 
   // —— 菜单 ——
 
-  menuLoad: async (menuId) => {
+  menuLoad: async (menuId, options) => {
     const active = facade;
     const definition = useDefinitionStore.getState().definition;
     if (!active || !definition) return;
     if (useMenuStore.getState().loadedMenus.has(menuId)) return;
     const controls = definition.controlsByMenu.get(menuId) ?? [];
+    const silent = options?.silent === true;
     const menu = useMenuStore.getState();
-    menu.setStatus('loading', 0, null);
+    if (!silent) menu.setStatus('loading', 0, null);
     const entries: ValueEntry[] = [];
     let done = 0;
     for (const control of controls) {
@@ -453,14 +464,14 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
         // 单个控件读失败不阻断整菜单：保留默认值，错误已由门面记录到调试面板
       }
       done += 1;
-      if (done % 8 === 0 || done === controls.length) {
+      if (!silent && (done % 8 === 0 || done === controls.length)) {
         useMenuStore
           .getState()
           .setStatus('loading', Math.round((done / Math.max(1, controls.length)) * 100));
       }
     }
     useMenuStore.getState().hydrate(menuId, entries);
-    useMenuStore.getState().setStatus('ready', 100);
+    if (!silent) useMenuStore.getState().setStatus('ready', 100);
   },
 
   menuCommit: async (control, value) => {
@@ -522,6 +533,15 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
         rawHex: info.rawHex,
       });
       return false;
+    }
+  },
+
+  menuPreloadAll: async () => {
+    const active = facade;
+    const definition = useDefinitionStore.getState().definition;
+    if (!active || !definition) return;
+    for (const menu of definition.menus) {
+      await get().menuLoad(menu.id, { silent: true });
     }
   },
 

@@ -25,6 +25,9 @@ export interface DeviceFacadeOptions {
   readonly timeoutMs?: number;
 }
 
+/** 自动落盘空闲等待（ms）：SET 后 1.5s 内无新改动才发 0x09，兼顾即时性与 EEPROM 寿命。 */
+const AUTO_SAVE_IDLE_MS = 1500;
+
 export class DeviceFacade {
   readonly protocol: ViaProtocol;
   readonly session = new DeviceSession();
@@ -42,6 +45,11 @@ export class DeviceFacade {
   private opened = false;
   /** 宏缓冲区总字节数缓存（连接后由 getMacroSize 回填，未连接时取 64 兜底）。 */
   private macroBufferSizeValue = 64;
+  /** 自动落盘：地址 → 待执行定时器（空闲防抖，避免 EEPROM 写穿）。 */
+  private readonly autoSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** 地址 → 最近一次改动的控件（定时器触发时需要它发 0x09）。 */
+  private readonly autoSaveControls = new Map<string, ControlSpec>();
+  private autoSaveEnabled = true;
 
   constructor(
     readonly transport: HidTransport,
@@ -104,6 +112,8 @@ export class DeviceFacade {
   }
 
   async disconnect(): Promise<void> {
+    // 断开前把待落盘的改动写进 EEPROM：否则用户退出后配置丢失（SET 只改 RAM）
+    await this.flushAutoSaves().catch(() => undefined);
     await this.writeQueue.flush().catch(() => undefined);
     this.opened = false;
     this.session.reset();
@@ -214,6 +224,64 @@ export class DeviceFacade {
     this.session.clearDirty('value', control.id);
   }
 
+  // —— 自动落盘（VIA 语义：SET 只改 RAM，必须 0x09 才写 EEPROM）——
+  //
+  // QMK via.c 实证：id_custom_set_value 走 *_noeeprom()（断电即丢），
+  // id_custom_save 才 eeprom 持久化。不落盘 = 每次开机配置回到出厂值。
+  // 拖动/取色是高频写入，故按「空闲 1.5s」防抖落盘，避免把 EEPROM 写穿。
+
+  /** 空闲多久后落盘（同一地址连续改动只落最后一次）。 */
+  private scheduleAutoSave(control: ControlSpec): void {
+    if (!this.autoSaveEnabled) return;
+    const key = addressKey(control.address);
+    const pending = this.autoSaveTimers.get(key);
+    if (pending !== undefined) clearTimeout(pending);
+    const timer = setTimeout(() => {
+      this.autoSaveTimers.delete(key);
+      void this.runAutoSave(control);
+    }, AUTO_SAVE_IDLE_MS);
+    this.autoSaveTimers.set(key, timer);
+  }
+
+  private async runAutoSave(control: ControlSpec): Promise<void> {
+    try {
+      await this.writeQueue.flush();
+      await this.protocol.customSave(control.address);
+      this.session.clearDirty('value', control.id);
+    } catch (e) {
+      this.onWarning?.({
+        level: 'warn',
+        title: '配置落盘失败',
+        detail: `${control.label || control.valueKey}：${e instanceof Error ? e.message : String(e)}（值已生效，但重开设备会丢失）`,
+      });
+    }
+  }
+
+  /** 立即执行全部待落盘保存（断开连接 / 退出前调用）。 */
+  async flushAutoSaves(): Promise<void> {
+    const controls = [...this.autoSaveTimers.keys()];
+    for (const key of controls) {
+      const timer = this.autoSaveTimers.get(key);
+      if (timer === undefined) continue;
+      clearTimeout(timer);
+      this.autoSaveTimers.delete(key);
+      const control = this.autoSaveControls.get(key);
+      if (control) await this.runAutoSave(control);
+    }
+  }
+
+  /** 取消全部待落盘保存（设备已断开等场景，避免对空 facade 发帧）。 */
+  cancelAutoSaves(): void {
+    for (const timer of this.autoSaveTimers.values()) clearTimeout(timer);
+    this.autoSaveTimers.clear();
+  }
+
+  /** 是否开启自动落盘（默认开启；可在设置里关掉改为手动 ⌘S）。 */
+  setAutoSaveEnabled(enabled: boolean): void {
+    this.autoSaveEnabled = enabled;
+    if (!enabled) this.cancelAutoSaves();
+  }
+
   /** button 类动作：options 字节原样透传（U3）。 */
   async triggerAction(control: ControlSpec, arg?: number): Promise<void> {
     const args = control.options.kind === 'action' ? control.options.args : [];
@@ -300,6 +368,9 @@ export class DeviceFacade {
       }
     }
     this.session.markDirty('value', control.id);
+    // VIA 语义：SET 只改 RAM，必须 0x09 落盘才会写进 EEPROM（否则每次开机配置回到出厂值）。
+    this.autoSaveControls.set(key, control);
+    this.scheduleAutoSave(control);
   }
 
   private requireDefinition(): ParsedDefinition {
