@@ -252,13 +252,16 @@ export class DeviceFacade {
     const width = inferWidth(control, overrides);
     await this.protocol.customSetValue(control.address, value, width);
     const key = addressKey(control.address);
-    // 首次写入该地址时做回读自校验，不一致则自动换宽度重试一次（架构 §8.3）
+    // 首次写入该地址时做回读自校验（架构 §8.3）。
+    // ⚠️ 自校验**只读不写**：回读不一致时绝不能用 alt 宽度「重写设备」——写入是强副作用，
+    // 且 2 字节大端编码值 ≤255 时首字节恒 0，对 1 字节 value_id 的重写会把控件值清零
+    // （真机 bug：Backlight Brightness/Effect Speed 滑块被清零且恒读回 0）。
+    // alt 只做**读取**探测以给出建议宽度，最终是否覆盖由用户在调试面板决定。
     if (!this.verified.has(key)) {
       this.verified.add(key);
       const readBack = await this.protocol.customGetValue(control.address, width);
       if (readBack !== (value >>> 0)) {
         const alt = width === 1 ? 2 : 1;
-        await this.protocol.customSetValue(control.address, value, alt);
         const altRead = await this.protocol.customGetValue(control.address, alt);
         this.onWarning?.({
           level: 'warn',
