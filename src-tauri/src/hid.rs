@@ -65,7 +65,31 @@ fn emit_if_gone(app: &AppHandle, path: &str) -> bool {
     gone
 }
 
-#[tauri::command]
+/// R3：hidapi 无热插拔事件 → 打开期间每秒轮询一次 enumerate。
+/// 路径从总线消失 → 清理连接状态并广播 hid://disconnect。
+/// 传输失败兜底（emit_if_gone）仍然保留，双保险。
+fn spawn_disconnect_poller(app: AppHandle, path: String) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        // 已关闭或换设备了 → 轮询线程自然退出（emit 责任交给当前持有者）
+        let still_mine = opened_guard().as_ref().map(|o| o.path == path).unwrap_or(false);
+        if !still_mine {
+            return;
+        }
+        let present = {
+            let api = HID_API.lock().expect("HID_API poisoned");
+            let found = api.device_list().any(|d| d.path().to_string_lossy() == path);
+            found
+        };
+        if !present {
+            *opened_guard() = None;
+            let _ = app.emit("hid://disconnect", path);
+            return;
+        }
+    });
+}
+
+#[tauri::command(async)]
 pub fn hid_list() -> Result<Vec<NativeDeviceInfo>, String> {
     let api = HID_API.lock().map_err(|_| err("ERROR", "HidApi 互斥锁中毒"))?;
     let mut out: Vec<NativeDeviceInfo> = Vec::new();
@@ -87,8 +111,8 @@ pub fn hid_list() -> Result<Vec<NativeDeviceInfo>, String> {
     Ok(out)
 }
 
-#[tauri::command]
-pub fn hid_open(path: String) -> Result<NativeDeviceInfo, String> {
+#[tauri::command(async)]
+pub fn hid_open(app: AppHandle, path: String) -> Result<NativeDeviceInfo, String> {
     // 幂等：已打开同一路径直接返回
     {
         let opened = opened_guard();
@@ -111,7 +135,8 @@ pub fn hid_open(path: String) -> Result<NativeDeviceInfo, String> {
         let info = find_info(&api, &path).ok_or_else(|| err("DISCONNECT", "打开后枚举不到该设备（已被拔出？）"))?;
         (dev, info)
     };
-    *opened_guard() = Some(OpenedDevice { device: dev, path });
+    *opened_guard() = Some(OpenedDevice { device: dev, path: path.clone() });
+    spawn_disconnect_poller(app, path);
     Ok(info)
 }
 
@@ -134,7 +159,7 @@ fn find_info(api: &HidApi, path: &str) -> Option<NativeDeviceInfo> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn hid_close() -> Result<(), String> {
     if let Some(o) = opened_guard().take() {
         // hidapi 无显式 close；drop 即关闭。显式重置由 drop 完成。
@@ -144,7 +169,8 @@ pub fn hid_close() -> Result<(), String> {
 }
 
 /// 同步请求-响应：写 32 字节 VIA 帧（内部补 0x00 前缀），读回 32 字节响应。
-#[tauri::command]
+/// async：Tauri 同步 command 跑在主线程，阻塞 read_timeout 会卡死 UI——必须放异步运行时。
+#[tauri::command(async)]
 pub fn hid_transfer(app: AppHandle, request: Vec<u8>, timeout_ms: Option<u32>) -> Result<Vec<u8>, String> {
     let mut guard = opened_guard();
     let o = guard.as_mut().ok_or_else(|| err("DISCONNECT", "设备未打开"))?;
@@ -192,7 +218,7 @@ pub fn hid_transfer(app: AppHandle, request: Vec<u8>, timeout_ms: Option<u32>) -
 
 /// feature report 能力预留（DoD③）：本应用协议全走 output/input report，
 /// 但 VIA 部分固件命令可能走 feature report，桥必须具备收发能力。
-#[tauri::command]
+#[tauri::command(async)]
 pub fn hid_feature_get(app: AppHandle, report_id: u8, buf_len: Option<u16>) -> Result<Vec<u8>, String> {
     let mut guard = opened_guard();
     let o = guard.as_mut().ok_or_else(|| err("DISCONNECT", "设备未打开"))?;
@@ -216,7 +242,7 @@ pub fn hid_feature_get(app: AppHandle, report_id: u8, buf_len: Option<u16>) -> R
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn hid_feature_send(app: AppHandle, report_id: u8, data: Vec<u8>) -> Result<(), String> {
     let mut guard = opened_guard();
     let o = guard.as_mut().ok_or_else(|| err("DISCONNECT", "设备未打开"))?;
