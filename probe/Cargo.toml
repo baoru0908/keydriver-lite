@@ -1,0 +1,11 @@
+[package]
+name = "via-hid-probe"
+version = "0.1.0"
+edition = "2021"
+
+# 阶段B R1 真机探针：hidapi 枚举 + open VIA RAW HID (0xFF60/0x61) + 只读 GET 往返
+[dependencies]
+hidapi = "2.6"
+
+[profile.release]
+opt-level = 1
