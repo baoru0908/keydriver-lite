@@ -9,6 +9,15 @@ import { DeviceSession } from './DeviceSession';
 import { ValueWriteQueue } from './ValueWriteQueue';
 import { runHandshake, type HandshakeResult, type ProtocolWarning } from './handshake';
 import { addressKey } from '@/core/protocol/CustomValueCodec';
+import {
+  cacheDeviceValue,
+  cachedDeviceValue,
+  clearDeviceCache,
+  clearDistrust,
+  deviceCacheKey,
+  distrustAddress,
+  isDistrusted,
+} from './ConfigCache';
 import { createLogger } from '@/shared/log';
 
 const log = createLogger('DeviceFacade');
@@ -42,6 +51,10 @@ export class DeviceFacade {
    */
   private readonly unreliableReadback = new Set<string>();
   private readonly onWarning?: (warning: ProtocolWarning) => void;
+  /** 本设备（vid:pid）的本地缓存键：跨会话记住「写过的值」与「回读不可信」的地址。 */
+  private readonly cacheKey: string;
+  /** 本次会话中「以缓存值覆盖了设备回读」的地址（UI 提示用）。 */
+  private readonly cacheOverrides = new Set<string>();
   private opened = false;
   /** 宏缓冲区总字节数缓存（连接后由 getMacroSize 回填，未连接时取 64 兜底）。 */
   private macroBufferSizeValue = 64;
@@ -57,6 +70,7 @@ export class DeviceFacade {
     options: DeviceFacadeOptions = {},
   ) {
     this.info = { device, transportKind: transport.kind };
+    this.cacheKey = deviceCacheKey(device.vendorId, device.productId);
     this.definition = options.definition ?? null;
     this.onWarning = options.onWarning;
     this.protocol = new ViaProtocol(transport, {
@@ -198,6 +212,43 @@ export class DeviceFacade {
     return this.unreliableReadback.has(addressKeyStr);
   }
 
+  /**
+   * 连接后读取控件值的展示解析（缓存优先，应对固件回读撒谎）：
+   *  - 地址被判定不可信且本地有缓存值 → 返回缓存值（上次真实配置）；
+   *  - 否则信任回读，并把回读值同步进缓存。
+   * 绝不在无缓存时编造值——回落永远是设备回读。
+   */
+  resolveDisplayValue(control: ControlSpec, readBack: number): { value: number; fromCache: boolean } {
+    if (isDistrusted(this.cacheKey, control.address)) {
+      const cached = cachedDeviceValue(this.cacheKey, control.address);
+      if (cached !== undefined) {
+        this.cacheOverrides.add(addressKey(control.address));
+        return { value: cached, fromCache: true };
+      }
+    }
+    cacheDeviceValue(this.cacheKey, control.address, readBack);
+    return { value: readBack, fromCache: false };
+  }
+
+  /** 本次会话中该地址是否正以缓存值展示（UI 提示用）。 */
+  isShowingCachedValue(control: ControlSpec): boolean {
+    return this.cacheOverrides.has(addressKey(control.address));
+  }
+
+  /**
+   * 「从设备重新读取」：清除一组控件的不可信标记，随后读取以设备为准。
+   * 用户显式选择信任设备——即使该固件会撒谎，也尊重用户意图
+   * （按钮文案已说明「忽略本地缓存」）。
+   */
+  clearDistrustFor(controls: readonly ControlSpec[]): void {
+    clearDistrust(this.cacheKey, controls.map((c) => c.address));
+    for (const control of controls) {
+      const key = addressKey(control.address);
+      this.unreliableReadback.delete(key);
+      this.cacheOverrides.delete(key);
+    }
+  }
+
   async readValue(control: ControlSpec, overrides?: WidthOverrides): Promise<number> {
     const width = inferWidth(control, overrides ?? loadOverrides());
     return this.protocol.customGetValue(control.address, width);
@@ -282,6 +333,11 @@ export class DeviceFacade {
     if (!enabled) this.cancelAutoSaves();
   }
 
+  /** 是否有待落盘的改动（关窗拦截用：无待办则不拦窗口）。 */
+  get hasPendingSaves(): boolean {
+    return this.autoSaveTimers.size > 0;
+  }
+
   /** button 类动作：options 字节原样透传（U3）。 */
   async triggerAction(control: ControlSpec, arg?: number): Promise<void> {
     const args = control.options.kind === 'action' ? control.options.args : [];
@@ -290,6 +346,12 @@ export class DeviceFacade {
 
   async eepromReset(): Promise<void> {
     await this.protocol.eepromReset();
+    // 复位后 EEPROM 全部作废：本地缓存与全部探测状态一并清空，
+    // 让下次读取以设备全新状态为准（否则缓存会把旧值冒充成新配置）。
+    clearDeviceCache(this.cacheKey);
+    this.verified.clear();
+    this.unreliableReadback.clear();
+    this.cacheOverrides.clear();
   }
 
   // —— 宏缓冲区（VIA MACRO） ——
@@ -332,6 +394,9 @@ export class DeviceFacade {
     const overrides = loadOverrides();
     const width = inferWidth(control, overrides);
     await this.protocol.customSetValue(control.address, value, width);
+    // 写入成功即入缓存：这是「上次真实配置」的来源（固件回读可能撒谎，
+    // 但 SET 回显正确 = 设备已收到——真机帧日志实证）。
+    cacheDeviceValue(this.cacheKey, control.address, value);
     const key = addressKey(control.address);
     // 首次写入该地址时做回读自校验（架构 §8.3）。
     // ⚠️ 自校验**只读不写**：回读不一致时绝不能用 alt 宽度「重写设备」——写入是强副作用，
@@ -349,6 +414,9 @@ export class DeviceFacade {
           const altRead = await this.protocol.customGetValue(control.address, alt);
           // 回读不可靠（BugFix C）：UI 保留乐观值的依据
           this.unreliableReadback.add(key);
+          // 持久化「回读不可信」：地址级 + 通道级（实测同通道地址会先后撒谎，
+           // 通道级标记让下次连接直接 distrust 整条通道）。
+          distrustAddress(this.cacheKey, control.address);
           this.onWarning?.({
             level: 'warn',
             title: '值宽度可能不正确',
@@ -360,6 +428,9 @@ export class DeviceFacade {
         }
       } catch (e) {
         this.unreliableReadback.add(key);
+        // 探测失败（超时/断连）同样说明该地址回读不可信：持久化标记，
+        // 避免下次连接又被坏回读带偏（SET 已成功，值以缓存为准）。
+        distrustAddress(this.cacheKey, control.address);
         this.onWarning?.({
           level: 'warn',
           title: '回读校验失败',

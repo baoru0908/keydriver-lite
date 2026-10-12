@@ -1,8 +1,8 @@
 // 菜单面板：菜单 Tab（来自定义文件）+ 懒加载进度 + 生成器 + 保存栏。
 import { useEffect, useMemo } from 'react';
-import { FileJson, Usb } from 'lucide-react';
+import { FileJson, History, RotateCw, Usb } from 'lucide-react';
 import { useDefinitionStore } from '@/store/useDefinitionStore';
-import { useDeviceStore } from '@/store/useDeviceStore';
+import { getFacade, useDeviceStore } from '@/store/useDeviceStore';
 import { useMenuStore } from '@/store/useMenuStore';
 import { useUiStore } from '@/store/useUiStore';
 import { Button } from '@/ui/primitives/Button';
@@ -12,6 +12,7 @@ import { EmptyState } from '@/ui/primitives/EmptyState';
 import { Skeleton, SkeletonGroup } from '@/ui/primitives/Skeleton';
 import { ConnectBanner } from '@/ui/device/ConnectBanner';
 import { DevicePicker } from '@/ui/device/DevicePicker';
+import { Tooltip } from '@/ui/primitives/Tooltip';
 import { useState } from 'react';
 import { MenuGenerator } from './MenuGenerator';
 import { SaveBar } from './SaveBar';
@@ -41,12 +42,30 @@ export function MenuPane(): React.JSX.Element {
   // 否则会拿未初始化的值去做 showIf 判断，导致控件首屏闪现。
   const menuReady = activeMenuId !== null && loadedMenus.has(activeMenuId);
 
-  // 打开菜单时懒加载全部控件值（含被 showIf 隐藏的，因为它们要当条件变量）
+  // 打开菜单时懒加载全部控件值（含被 showIf 隐藏的因为它们要当条件变量）
   useEffect(() => {
     if (!activeMenuId || connectionState !== 'connected') return;
     if (loadedMenus.has(activeMenuId)) return;
     void menuLoad(activeMenuId);
   }, [activeMenuId, connectionState, loadedMenus, menuLoad]);
+
+  // 本菜单中「正以本地缓存值展示」的控件数（固件回读不可信的对策，真机实证）。
+  // 依赖 loadedMenus / status：水合完成（store 更新）后自动重算。
+  const cachedCount = useMemo(() => {
+    const active = getFacade();
+    if (!active || !activeMenu) return 0;
+    let count = 0;
+    for (const control of activeMenu.controls) {
+      if (active.isShowingCachedValue(control)) count += 1;
+    }
+    return count;
+  }, [activeMenu, loadedMenus, status, connectionState]);
+
+  // 「从设备重新读取」：忽略本地缓存，强制以设备回读为准（用户显式选择）。
+  const rereadFromDevice = (): void => {
+    if (!activeMenuId || connectionState !== 'connected') return;
+    void menuLoad(activeMenuId, { force: true });
+  };
 
   if (!definition) {
     return (
@@ -84,7 +103,25 @@ export function MenuPane(): React.JSX.Element {
             <span className="ml-1 text-[10px] text-fg-dim">{menu.controls.length}</span>
           </button>
         ))}
+        <Tooltip label="忽略本地缓存，强制从设备重新读取本菜单全部控件">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-auto"
+            onClick={rereadFromDevice}
+            disabled={!connected}
+            aria-label="从设备重新读取"
+          >
+            <RotateCw size={14} />
+          </Button>
+        </Tooltip>
       </div>
+      {cachedCount > 0 ? (
+        <p className="flex items-center gap-1.5 rounded-card bg-warn-soft px-2 py-1 text-caption text-warn">
+          <History size={12} aria-hidden />
+          {`${cachedCount} 个控件的设备回读不可信（本固件实测会返回陈旧值或 0），正显示上次会话写入的配置；点上方刷新按钮可强制以设备为准。`}
+        </p>
+      ) : null}
 
       <ConnectBanner
         onImportDefinition={() => setImportDialogOpen(true)}

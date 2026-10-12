@@ -11,6 +11,7 @@ import { MascotBubble, MascotTrio } from '@/ui/brand/mascots';
 import { useKeymapStore } from '@/store/useKeymapStore';
 import { useMenuStore } from '@/store/useMenuStore';
 import { useDeviceStore, startHotplugWatch } from '@/store/useDeviceStore';
+import { bindCloseFlush } from '@/shared/closeFlush';
 import { getBridge } from '@/shared/bridge';
 import { createDirtyReporter } from '@/shared/dirtyCount';
 import { useBreakpoint } from '@/shared/useBreakpoint';
@@ -99,6 +100,8 @@ export function AppShell({ onImportDefinition }: AppShellProps): React.JSX.Eleme
   // 热插拔看门狗：启动时键盘不在位 → 插上后 2s 内自动出现在列表并重连（幂等，重复调用无害）。
   useEffect(() => {
     startHotplugWatch();
+    // 关窗 / 失焦落盘：SET 只改 RAM，关窗前必须 flush 0x09（真机日志实证的缺口）
+    bindCloseFlush();
     if (autoReconnectStarted) return;
     autoReconnectStarted = true;
     void useDeviceStore.getState().autoReconnect();
