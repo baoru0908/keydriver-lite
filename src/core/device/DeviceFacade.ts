@@ -249,6 +249,37 @@ export class DeviceFacade {
     }
   }
 
+  /**
+   * 重连对账（reload / 重新连接场景，固件回读不可信的兜底）：
+   * 连接后把「被标记为不可信且本地有缓存值」的地址重新下发到设备并落盘 EEPROM，
+   * 使设备状态与界面/缓存一致——否则 reload 后固件复位到陈旧 EEPROM，
+   * 表现为「灯灭 / 配置丢失」（与冷启动不同：冷启动前有关窗可靠落盘，
+   * reload 的 beforeunload 落盘是异步尽力而为、常被丢弃）。
+   * ⚠️ 只动「确实写过且有缓存」的地址，绝不下发未配置过的默认值；
+   * 直接 SET + 0x09，刻意不走 writeValueDirect 的回读自校验（避免每次连接刷一堆告警）。
+   */
+  async reconcileFromCache(): Promise<void> {
+    const definition = this.definition;
+    if (!definition) return;
+    for (const control of definition.controls) {
+      if (!isDistrusted(this.cacheKey, control.address)) continue;
+      const cached = cachedDeviceValue(this.cacheKey, control.address);
+      if (cached === undefined) continue;
+      try {
+        const width = inferWidth(control, loadOverrides());
+        await this.protocol.customSetValue(control.address, cached, width);
+        cacheDeviceValue(this.cacheKey, control.address, cached);
+        await this.protocol.customSave(control.address).catch(() => undefined);
+      } catch (e) {
+        this.onWarning?.({
+          level: 'warn',
+          title: '重连对账写入失败',
+          detail: `${control.label || control.valueKey}：${e instanceof Error ? e.message : String(e)}`,
+        });
+      }
+    }
+  }
+
   async readValue(control: ControlSpec, overrides?: WidthOverrides): Promise<number> {
     const width = inferWidth(control, overrides ?? loadOverrides());
     return this.protocol.customGetValue(control.address, width);

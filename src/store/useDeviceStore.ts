@@ -294,6 +294,9 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
       await get().reloadKeymap();
       // 读优先：把设备当前配置读进界面（只读，零写入）——界面必须呈现设备真实值
       await get().menuPreloadAll();
+      // 重连对账：固件回读撒谎时把可信缓存重新下发到设备，避免 reload 后灯灭 / 配置丢失
+      // （reload 走 beforeunload，落盘不可靠；冷启动有关窗可靠落盘，故只有 reload 复现）。
+      await facade?.reconcileFromCache().catch(() => undefined);
       return true;
     } catch (e) {
       const info = toErrorInfo(e);
