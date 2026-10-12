@@ -1,6 +1,6 @@
 // QA 独立验证 · 键码显示层（KeycodeFormatter）的页判定边界。
 import { describe, expect, it } from 'vitest';
-import { parseKeycode, format, isSpecial } from '@/keycodes/KeycodeFormatter';
+import { parseKeycode, format, isSpecial, setKeycodeDialect } from '@/keycodes/KeycodeFormatter';
 import { KeycodeTable } from '@/keycodes/KeycodeTable';
 import { QK_PAGE } from '@/core/protocol/constants';
 
@@ -98,6 +98,28 @@ describe('QA · QMK v9 新编码兜底（keycodes_0.0.1.hjson）', () => {
 
   it('HID Keyboard Menu (0x76) 有可读名', () => {
     expect(format(0x0076)).toBe('Menu');
+  });
+});
+
+describe('QA · 键码字典方言（TO/DF 歧义段 0x5200-0x521F）', () => {
+  // 0x5200-0x521F：旧编码 = DF(n)，v9 = TO(n)，真歧义，只有字典版本能消除。
+  // 'auto'（默认）保持旧解析 DF；握手读到 0x09 后切 'v9' 归 TO。
+  it("auto/legacy 方言下 0x5202 保持旧解析 DF(2)", () => {
+    setKeycodeDialect('auto');
+    expect(format(0x5202)).toBe('DF(2)');
+    setKeycodeDialect('legacy');
+    expect(format(0x5202)).toBe('DF(2)');
+  });
+
+  it("v9 方言下 0x5202 解析为 TO(2)（用户键盘 VIA 显示 TO）", () => {
+    setKeycodeDialect('v9');
+    expect(parseKeycode(0x5202)).toMatchObject({ kind: 'layer', prefix: 'TO', param: 2 });
+    expect(format(0x5202)).toBe('TO(2)');
+    expect(format(0x5200)).toBe('TO(0)');
+    // v9 特征段（≥0x20）不受方言影响，恒 v9
+    expect(format(0x5221)).toBe('MO(1)');
+    // 恢复默认，避免污染其他用例
+    setKeycodeDialect('auto');
   });
 });
 

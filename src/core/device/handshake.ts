@@ -27,7 +27,7 @@ export interface HandshakeResult {
   readonly layerCount: number;
   readonly firmwareVersion: number;
   readonly layoutOptions: number;
-  /** 键码字典版本（BCD）；协议 < 13 时为 null（该版本没有这个概念） */
+  /** 键码字典版本（BCD）；协议 < 13 时为 null（该版本没有这个概念）。0x08=旧字典 / 0x09=v9 */
   readonly keycodesVersion: number | null;
   readonly probe: ProbeResult;
 }
@@ -93,31 +93,38 @@ export async function runHandshake(
 /**
  * 键码字典版本（0x02 + 0x06，BCD）。
  * 协议 ≥ 13 时**必须**先读它再选键码字典，否则部分键会被按错字典解释。
- * 有效区间 0x00000008–0x00000009；超出时告警但不阻断连接。
+ * 协议 < 13 时**仍会试读**：实证部分固件（协议 v12）已实现该命令且使用 v9 编码
+ * （0x5221=MO(1)），读到合法区间 0x08–0x09 即采纳；读失败/越界静默返回 null。
+ * 协议 ≥ 13 时读取失败或越界告警。
  */
 export async function readKeycodesVersion(
   protocol: ViaProtocolLike,
   protocolVersion: number,
   options: HandshakeOptions = {},
 ): Promise<number | null> {
-  if (protocolVersion < KEYCODES_VERSION_PROTOCOL_MIN) return null;
+  const required = protocolVersion >= KEYCODES_VERSION_PROTOCOL_MIN;
   let value: number;
   try {
     value = await protocol.getKeycodesVersion();
   } catch (e) {
-    options.onWarning?.({
-      level: 'warn',
-      title: '键码字典版本读取失败',
-      detail: `协议 v${protocolVersion} 要求先读键码字典版本：${e instanceof Error ? e.message : String(e)}`,
-    });
+    if (required) {
+      options.onWarning?.({
+        level: 'warn',
+        title: '键码字典版本读取失败',
+        detail: `协议 v${protocolVersion} 要求先读键码字典版本：${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
     return null;
   }
   if (value < KEYCODES_VERSION_MIN || value > KEYCODES_VERSION_MAX) {
-    options.onWarning?.({
-      level: 'warn',
-      title: '键码字典版本超出已知区间',
-      detail: `读到 0x${value.toString(16).toUpperCase().padStart(8, '0')}，已知区间为 0x00000008–0x00000009，改键可能出错`,
-    });
+    if (required) {
+      options.onWarning?.({
+        level: 'warn',
+        title: '键码字典版本超出已知区间',
+        detail: `读到 0x${value.toString(16).toUpperCase().padStart(8, '0')}，已知区间为 0x00000008–0x00000009，改键可能出错`,
+      });
+    }
+    return null;
   }
   return value;
 }

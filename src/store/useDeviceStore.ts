@@ -16,6 +16,7 @@ import { useDebugStore } from './useDebugStore';
 import { useDefinitionStore } from './useDefinitionStore';
 import { useKeymapStore, selectKeycode } from './useKeymapStore';
 import { toErrorInfo } from '@/shared/result';
+import { setKeycodeDialect, getKeycodeDialect } from '@/keycodes/KeycodeFormatter';
 import { toast } from '@/ui/primitives/Toast';
 import type { Unsubscribe } from '@/core/hid/HidTransport';
 
@@ -289,6 +290,11 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
         get().handleLost(`设备「${info.productName}」已从系统中移除`);
       });
       const result = await facade.connect();
+      // 键码字典方言：读到版本 0x09 → v9（0x5200-0x521F = TO），0x08 → legacy；
+      // 读不到 → auto（保持旧解析，等 reloadKeymap 的 v9 特征启发式兜底）
+      setKeycodeDialect(
+        result.keycodesVersion === 0x09 ? 'v9' : result.keycodesVersion === 0x08 ? 'legacy' : 'auto',
+      );
       set({ state: 'connected', handshake: result, layoutOptions: result.layoutOptions, busy: false, devices: list });
       rememberDevice(device);
       await get().reloadKeymap();
@@ -408,6 +414,22 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
       );
       set({ layoutOptions: await active.getLayoutOptions() });
       keymap.setLoading(false, 100);
+      // v9 特征启发式兜底：字典版本没读到（auto）时，若任何层出现 0x52xx 且低 8 位
+      // ≥0x20 的键码（旧编码下为非法层号，合法固件永不返回），则固件必是 v9 →
+      // 歧义段 0x5200-0x521F 归 TO 而非 DF，切换后重设 layers 引用触发键位图重渲染。
+      if (getKeycodeDialect() === 'auto') {
+        const hasV9 = layers.some((data) =>
+          data.some((kc) => (kc & 0xff00) === 0x5200 && (kc & 0xff) >= 0x20),
+        );
+        if (hasV9) {
+          setKeycodeDialect('v9');
+          useKeymapStore.getState().setLayers(
+            layers.map((d) => new Uint16Array(d)),
+            definition?.matrix.rows ?? 0,
+            definition?.matrix.cols ?? 0,
+          );
+        }
+      }
     } catch (e) {
       keymap.setLoading(false, 0);
       set({ error: toErrorInfo(e).message });

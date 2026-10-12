@@ -42,9 +42,29 @@ const V9_LAYER_BASES: readonly { readonly base: number; readonly prefix: string 
   { base: 0x52c0, prefix: 'TT' },
 ];
 
+/**
+ * 键码字典方言：0x5200–0x521F 段在旧编码下是 DF(n)、v9 下是 TO(n)，真歧义。
+ * 'auto'（默认）按旧字典解析；握手读到字典版本后显式设置，或由启发式（层中出现
+ * 0x5220+ 的 v9 特征键码）切换为 'v9'。
+ */
+export type KeycodeDialect = 'legacy' | 'v9' | 'auto';
+let keycodeDialect: KeycodeDialect = 'auto';
+
+export function setKeycodeDialect(d: KeycodeDialect): void {
+  keycodeDialect = d;
+}
+
+export function getKeycodeDialect(): KeycodeDialect {
+  return keycodeDialect;
+}
+
 /** 解析任意 16 位键码的结构（先精确表，再按页解析）。 */
 export function parseKeycode(keycode: number): ParsedKeycode {
   const kc = keycode & 0xffff;
+  // v9 方言下 0x5200–0x521F 归 TO（与旧 DF 编码重叠，只有字典版本能消除歧义）
+  if (keycodeDialect === 'v9' && kc >= 0x5200 && kc < 0x5220) {
+    return { kind: 'layer', prefix: 'TO', param: kc & 0x1f };
+  }
   const exact = KeycodeTable.byCodeMap().get(kc);
   // 退化的 Mod-Tap 基码（MT(mod, KC_NO)）不参与精确匹配。
   // 它恰好等于 MIDI / 音序器 / 可编程按键 / RGB 等 Quantum 页的基址（0x7100/0x7200/0x7400/0x7800），

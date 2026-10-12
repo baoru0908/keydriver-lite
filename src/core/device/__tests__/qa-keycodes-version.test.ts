@@ -80,8 +80,8 @@ describe('qa-regression · 协议版本的第二方言兜底失效', () => {
   });
 });
 
-describe('QA · 键码字典版本：协议 ≥ 13 才读（高危点 3）', () => {
-  it('protocolVersion < 13：完全不发起 0x02/0x06 请求，返回 null', async () => {
+describe('QA · 键码字典版本：协议 ≥ 13 必读；< 13 试读（v9 字典判定）', () => {
+  it('protocolVersion < 13：仍会试读；读到合法区间值即采纳', async () => {
     const calls: number[] = [];
     const fake: ViaProtocolLike = {
       getProtocolVersion: async () => 12,
@@ -89,7 +89,7 @@ describe('QA · 键码字典版本：协议 ≥ 13 才读（高危点 3）', () 
       setKeyboardValue: async () => undefined,
       getKeycodesVersion: async () => {
         calls.push(1);
-        return 0;
+        return KEYCODES_VERSION_MAX;
       },
       getLayerCount: async () => 4,
       getKeycode: async () => 0,
@@ -106,8 +106,30 @@ describe('QA · 键码字典版本：协议 ≥ 13 才读（高危点 3）', () 
       getMacroSize: async () => 0,
       rawCommand: async () => new Uint8Array(0),
     };
-    await expect(readKeycodesVersion(fake, 12)).resolves.toBeNull();
-    expect(calls).toHaveLength(0);
+    // 实证部分协议 v12 固件已实现 0x02/0x06 且使用 v9 编码（0x5221=MO(1)），
+    // 试读成功可精确消除 TO/DF 歧义段
+    await expect(readKeycodesVersion(fake, 12)).resolves.toBe(KEYCODES_VERSION_MAX);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('protocolVersion < 13：读失败静默返回 null，不告警', async () => {
+    const warnings: ProtocolWarning[] = [];
+    const fake = {
+      getKeycodesVersion: async () => {
+        throw new Error('UNHANDLED');
+      },
+    } as unknown as ViaProtocolLike;
+    await expect(readKeycodesVersion(fake, 12, { onWarning: (w) => warnings.push(w) })).resolves.toBeNull();
+    expect(warnings).toHaveLength(0);
+  });
+
+  it('protocolVersion < 13：读到越界值静默返回 null，不告警', async () => {
+    const warnings: ProtocolWarning[] = [];
+    const fake = {
+      getKeycodesVersion: async () => 0x1f,
+    } as unknown as ViaProtocolLike;
+    await expect(readKeycodesVersion(fake, 12, { onWarning: (w) => warnings.push(w) })).resolves.toBeNull();
+    expect(warnings).toHaveLength(0);
   });
 
   it('protocolVersion ≥ 13：正常读取', async () => {
@@ -117,14 +139,14 @@ describe('QA · 键码字典版本：协议 ≥ 13 才读（高危点 3）', () 
     await expect(readKeycodesVersion(fake, 13)).resolves.toBe(KEYCODES_VERSION_MIN);
   });
 
-  it('越界值与非 BCD 值：都告警但不阻断', async () => {
+  it('越界值与非 BCD 值：协议 ≥ 13 时告警并返回 null', async () => {
     for (const value of [0x0000_000a, 0x0000_001f, 0xffff_ffff, 0x0000_0000]) {
       const warnings: ProtocolWarning[] = [];
       const fake = {
         getKeycodesVersion: async () => value,
       } as unknown as ViaProtocolLike;
       await expect(readKeycodesVersion(fake, 13, { onWarning: (w) => warnings.push(w) })).resolves.toBe(
-        value,
+        null,
       );
       expect(warnings, `0x${value.toString(16)} 应触发告警`).toHaveLength(1);
       expect(warnings[0]?.level).toBe('warn');
