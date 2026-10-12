@@ -1,5 +1,10 @@
 # keydriver 系统架构设计
 
+> ⚡ **现状更新（2026-10-12）**：本文 §1.2/§1.3 的「Tauri 否决 / node-hid P2 预留」为**早期决策，已被覆盖**。
+> 现状：**双外壳变体** —— 主版 `keydriver`（Electron + WebHID）与 Lite `keydriver-lite`（Tauri v2 + Rust hidapi 桥，.app 3.5M）。
+> Lite 通过 `NativeHidTransport` 实现既有 `HidTransport` 接口的 `'nodehid'` 预留位（`src/core/hid/index.ts` 工厂激活），
+> 前端代码零改动，7 层单向依赖与传输接缝设计经受住了迁移检验。下文其余内容仍为有效架构蓝图。
+
 > 文档版本：v1.0
 > 撰写：高见远（架构师）
 > 项目根目录：`/Users/baoru/Downloads/AI/keydriver`
@@ -100,7 +105,7 @@ customKeycodes: 2 个（键盘锁 / WIN锁），含 name/title/shortName，short
 | **状态管理** | **Zustand 5（按 slice 拆分 6 个 store）** | 无 boilerplate；`useStore(selector)` 精确订阅，**349 个控件可按 controlId 粒度订阅，避免全量重渲染**（这是本项目的硬性能要求）；TS 类型推导极佳 | Redux Toolkit：需 slice/thunk/selector 三件套，本项目不复制 via-app 代码只借鉴思路，boilerplate 收益为负；Jotai：原子粒度太细，349 控件维护成本高 |
 | **样式方案** | **Tailwind CSS 4.3（`@tailwindcss/vite` 插件，CSS-first `@theme`）+ Radix UI primitives** | ① 可 100% 精确落地 PRD §7.4 的自定义深色主题（`#0F1115`/`#1A1D24`/`#4DD4C0`），无第三方主题覆盖战争；② 产物 CSS 极小；③ Radix 提供无样式、可访问性完备的 Select/Slider/Switch/Dialog 行为层，**避免自研 349 长列表下的交互控件**（下拉/滑块/焦点管理是最易出 bug 的部分） | **MUI（PRD 原建议）**：默认 Material 观感偏「后台管理系统」，与「现代化简洁」有距离；深度定制需覆盖大量 `sx`/theme token，成本高于 Tailwind 直接写；运行时 CSS-in-JS 在 349 控件下有可测量的重渲染开销。<br>**纯自研组件（零 Radix）**：下拉/滑块的键盘导航、焦点陷阱需大量自研，工期风险高。<br>**Ant Design**：与 MUI 同问题，且体积更大 |
 | **HID 后端（本期主）** | **WebHID（`navigator.hid`）+ 本机 Chrome/Edge** | **零原生编译、零二进制下载、零安装风险**——直接绕过「raw.githubusercontent.com 不可达」与「node-gyp 在 Apple Silicon 编译失败」两大硬风险；与 via-app 的 `usb-hid.ts` 逻辑同构，可直接借鉴；Chrome 154 / Edge 155 均完整支持 | **node-hid**：需 node-gyp 编译 + prebuild 从 GitHub 下载，双重高风险；且需额外 IPC 桥接层。**hidapi(cython)**：引入 Python 工具链，与前端栈割裂 |
-| **HID 后端（备用）** | **`HidTransport` 接口 + `DummyTransport`（本期必做）+ `NodeHidBridgeTransport`（P2 预留，仅留接口与文档）** | 传输层可插拔是本项目**最核心的风险对冲**：无硬件时全链路可开发/可演示/可单测；真机接入只是替换一个实现类 | 单一后端硬编码：一旦 node-hid 装不上，整个项目停滞 |
+| **HID 后端（备用）** | **`HidTransport` 接口 + `DummyTransport` + `WebHidTransport`（Electron 主版）+ `NativeHidTransport`（Tauri Lite，已落地）** | 传输层可插拔是本项目**最核心的风险对冲**：无硬件时全链路可开发/可演示/可单测；真机接入只是替换一个实现类 | 单一后端硬编码：一旦 node-hid 装不上，整个项目停滞 |
 | **应用外壳** | **本期：纯 Web SPA（`npm run dev` → Chrome/Edge 打开 localhost）<br>附：`npm run desktop` 用 `chrome --app=` 拉起无浏览器 UI 的独立窗口<br>M4+ 可选：Electron（零前端改造）** | 见 §1.2 专项论证 | 见 §1.2 |
 | **定义持久化** | **`idb-keyval`（IndexedDB）+ localStorage（UI 偏好），统一抽象为 `DefinitionRepository` 接口** | 浏览器环境下 IndexedDB 是唯一能存 100KB+ JSON 库的方案（localStorage 5MB 且同步阻塞）；接口抽象保证未来 Electron/Node 可换 fs 实现 | 嵌入式数据库（sqlite-wasm）：体积与复杂度远超需求 |
 | **定义校验** | **Zod 4** | R-P0-01 要求「字段级错误提示不白屏」，Zod 的路径化 error（`menus[2].content[5].content`）直接满足 | 手写校验：349 控件的嵌套结构手写校验约 300 行且易漏 |
@@ -125,7 +130,7 @@ customKeycodes: 2 个（键盘锁 / WIN锁），含 name/title/shortName，short
 
 | # | 问题 | **裁决** | 理由与落地方式 |
 | --- | --- | --- | --- |
-| **Q1** | 桌面外壳与 HID 后端选型 | **分两阶段**：本期 = 纯 Web SPA + WebHID；Electron 留 M4+ 可选；Tauri 否决；node-hid 降为 P2 预留接口 | ① Tauri 需 Rust 能力，团队无，且需从 crates.io 拉取工具链（网络风险同 Electron）；② WebHID 零编译零下载，当天可跑；③ Electron 零改造可后补（§1.2） |
+| **Q1** | 桌面外壳与 HID 后端选型 | **分两阶段**：本期 = 纯 Web SPA + WebHID；Electron 留 M4+ 可选；Tauri 否决；node-hid 降为 P2 预留接口 ⚠️ *（早期决策，已被覆盖：Electron 已落地为主版，Tauri v2 + hidapi 已落地为 Lite 发布形态，`nodehid` 预留位已由 `NativeHidTransport` 激活）* | ① Tauri 需 Rust 能力，团队无，且需从 crates.io 拉取工具链（网络风险同 Electron）；② WebHID 零编译零下载，当天可跑；③ Electron 零改造可后补（§1.2） |
 | **Q2** | 是否兼容 VIA v10（V2 方言） | **仅支持 V3（协议 ≥ 11）。握手时读 `0x01`，< 11 时明确报错并给出可操作文案，但不实现 V2 帧格式** | 目标文件含 `menus` 必为 V3。实现双方言会让「发错方言静默失败」（PRD §3.4 坑点 1）的风险翻倍——多一条方言就多一条静默失败路径。宁可明确报错，不可静默降级 |
 | **Q3** | `range` 值宽度如何确定 | **① 由 `options[1]`（max）推断：> 255 → 2 字节，否则 1 字节**；叠加 **③ 按 `channel:valueId` 或 valueKey 的覆盖表**（持久化到 localStorage）；再加**写后回读自校验**：不一致时自动尝试另一宽度并在调试面板告警 | 实测 F5：本文件 range 的 max 只有 255/1000/1023，无歧义区间。⚠️ **min 可能是 1**（`[1,255]`×22、`[1,1000]`×10、`[1,1023]`×3，共 35 个），滑块下限必须取 `options[0]`。覆盖表 + 自校验双保险，用户实机发现不对时可在 UI 里一键改，无需改代码 |
 | **Q4** | `color` 是 RGB 还是 HSV？字节序？ | **默认 HSV**（QMK RGB Matrix 与 VIA 官方实现均用 HSV），**做成可切换配置**（`hsv` / `rgb` / `grb`，默认 `hsv`）；字节序按 (H,S,V) 或 (R,G,B) 原序，**无跨字节序问题**（单字节分量） | 取色器同时显示 HSV 与 RGB 数值，用户实机比对后可在设置面板一键切换。GRB 为 WS2812 常见变体，留作选项 |
@@ -189,7 +194,7 @@ graph TD
         T0["HidTransport (接口)<br/>transfer(32B) → 32B"]
         T1["WebHidTransport<br/>navigator.hid"]
         T2["DummyTransport<br/>+ SimulatedFirmware"]
-        T3["NodeHidBridgeTransport<br/>(P2 预留)"]
+        T3["NativeHidTransport<br/>(Tauri + Rust hidapi, 已落地)"]
     end
 
     subgraph L6["定义解析层 (src/definition) — 纯函数"]
@@ -290,7 +295,7 @@ graph TD
 | `src/core/hid/SimulatedFirmware.ts` | Dummy 的固件状态机：keymap 三维数组、layoutOptions、customValues Map、EEPROM save 语义 | 220 |
 | `src/core/hid/WebHidTransport.ts` | WebHID 实现：`requestDevice`/`getDevices`、`sendReport(0, 32B)`、`inputreport` 事件匹配、Windows reportId 开关 | 200 |
 | `src/core/hid/deviceScanner.ts` | 枚举 + Usage Page `0xFF60`/Usage `0x61` 过滤 + VID/PID 侧载匹配 + 1s 轮询热插拔 | 140 |
-| `src/core/hid/NodeHidBridgeTransport.ts` | **P2 预留**：本地 WS 桥接客户端（仅接口与文档，本期不接线） | 100 |
+| `src/core/hid/NativeHidTransport.ts` | **Tauri 实现**：经 Rust hidapi 桥（src-tauri/hid.rs）收发 32 字节帧；取代原 P2 预留的 NodeHidBridgeTransport 方案 | 200 |
 | `src/core/hid/index.ts` | 传输层工厂 `createTransport(kind)` | 40 |
 
 ### 3.4 `src/core/protocol/` — 协议层
@@ -484,11 +489,11 @@ classDiagram
         -config: DummyConfig
         +handle(req: Uint8Array) Uint8Array
     }
-    class NodeHidBridgeTransport
+    class NativeHidTransport
 
     HidTransport <|.. WebHidTransport
     HidTransport <|.. DummyTransport
-    HidTransport <|.. NodeHidBridgeTransport
+    HidTransport <|.. NativeHidTransport
     DummyTransport *-- SimulatedFirmware
 
     class ViaProtocol {

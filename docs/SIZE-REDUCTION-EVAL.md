@@ -327,3 +327,14 @@ WKWebView 在 macOS 12+ 支持度良好，但建议在真机逐个面板回归�
 - `src/core/hid/HidTransport.ts` —— 传输层接口（迁移的接入点）
 - `src/core/hid/WebHidTransport.ts` —— 现有真实设备实现（新实现的参考模板）
 - `scripts/make-app.mjs` —— 手工打包脚本（阶段 A 的裁剪接入点）
+
+---
+
+## 执行结果（2026-10-12）
+
+| 阶段 | 结果 | 状态 |
+|---|---|---|
+| 阶段 A（Electron 裁剪） | 288.1M → **224.4M**（−22%）：裁非中英语言包 −47.7M、libvk_swiftshader + ICD manifest −15.8M（otool 实证无链接引用）、default_app.asar；libffmpeg.dylib 保留（链接期硬依赖） | ✅ 已落地 |
+| 阶段 B（Tauri v2 + Rust hidapi） | Tauri .app **3.5M**（−98.8% vs 288M），dmg 2.5M；前端代码零改动，`NativeHidTransport` 激活 `'nodehid'` 预留位 | ✅ 已落地并投产 |
+
+DoD 五关全过（R1 真机探针 / 帧级等价 diff / feature-report 往返 / build+启动 / 真机写读往返）。本文其余章节保留为决策过程记录。

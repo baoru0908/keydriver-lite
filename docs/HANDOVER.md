@@ -1,19 +1,21 @@
 # KeyDriver 交接文档
 
 > 交接日期：2026-10-11 · 交接人：交付总监（主理人）· 团队：software-keydriver-audit（PM 许清楚 / 架构师 高见远 / 工程师 寇豆码 / QA 严过关）
-> 本文档**取代** 2026-10-10 旧版交接（旧版基线：492 用例 12 红、真机未接入——均已过时，现基线 628/628 全绿、真机接入并完成两轮 bug 修复）
+> 本文档**取代** 2026-10-10 旧版交接（旧版基线：492 用例 12 红、真机未接入——均已过时）
+
+> ⚡ **现状更新（2026-10-12）**：阶段 B（Tauri v2 + Rust hidapi 桥）**已完成并投产**，Tauri .app 3.5M（−98.8%，前端代码零改动）；双仓 src 同源同步，串行测试全绿。详见 §3 阶段 B 里程碑。
 
 ## 1. 项目全景
 
-| 仓库 | 本地路径 | GitHub | 当前 main |
-|------|---------|--------|-----------|
-| KeyDriver 原版 | `/Users/baoru/Downloads/AI/keydriver` | `baoru0908/keydriver`（私有） | `2e72085` |
-| KeyDriver Lite | `/Users/baoru/Downloads/AI/keydriver-lite` | `baoru0908/keydriver-lite`（私有） | `24f329b` |
+| 仓库 | 本地路径 | GitHub | 外壳 |
+|------|---------|--------|------|
+| KeyDriver 原版 | `/Users/baoru/Downloads/AI/keydriver` | `baoru0908/keydriver`（私有） | Electron（主版，WebHID） |
+| KeyDriver Lite | `/Users/baoru/Downloads/AI/keydriver-lite` | `baoru0908/keydriver-lite`（私有） | **Tauri v2 + Rust hidapi 桥（发布形态）** |
 
-- 技术栈：Electron + Vite + React 19 + TypeScript + Tailwind v4（CSS-first @theme）+ Radix + zustand + lucide
-- 协议：VIA V3 / WebHID（usagePage 0xFF60 / usage 0x61），目标键盘 Em60 / EC_BM60（VID 0x5594 / PID 0x0005）
-- 两个仓库同源同历史；Lite 仓库已配置 `upstream` remote 指向本地原版目录，用于修复同步
-- 测试基线：**628/628（55 文件）串行 vitest**，两仓库一致
+- 技术栈：Vite + React 19 + TypeScript + Tailwind v4（CSS-first @theme）+ Radix + zustand + lucide；主版外壳 Electron，Lite 外壳 Tauri（`NativeHidTransport` 实现 `'nodehid'` 预留位）
+- 协议：VIA V3（usagePage 0xFF60 / usage 0x61），目标键盘 Em60 / EC_BM60（VID 0x5594 / PID 0x0005）；主版走 WebHID，Lite 走 Rust hidapi
+- 两仓 src/ 同源同步（评估实证逐文件一致）；Git 历史各自独立，修复以双仓同改方式落盘
+- 测试基线：串行 vitest 全绿（两仓一致，当前 670+ 用例）
 
 ## 2. 已交付（全部已推送 GitHub）
 
@@ -40,26 +42,31 @@
 
 ## 3. 未完成 / Backlog
 
-### 阶段 B（下一步主任务，**尚未开工**）
-- 目标：Lite 向 **~10M** 推进 = Tauri v2 + Rust hidapi 桥（`NativeHidTransport` 实现既有 `HidTransport` 接口的 `'nodehid'` 预留位，`src/core/hid/index.ts` 工厂处激活）
-- 设计依据：`docs/SIZE-REDUCTION-EVAL.md`（含 hid.rs / NativeHidTransport.ts 实现草图、字节语义 5 差异表、风险清单 R1-R7）
-- **保守口径**：全量迁移投入按 1–2 人月重估、体积按 15–30M 取保守值（不采信报告的 1-2 周 / 5-15M）
-- **DoD（5 条全过才升级为承诺轨道）**：①R1 真机探针绿（hidapi 枚举+open 0xFF60/0x61，含 SeizeDevice 兜底结论）②NativeHidTransport+hid.rs 帧级等价 diff（Dummy+SimulatedFirmware vs 真机）③feature-report 具体命令码往返绿 ④Tauri app build+签名+启动+`tauri://localhost` secure context 正常 ⑤真机一次真实配置写读往返
-- 环境已就绪：**cargo 1.99.0 / rustc 1.99.0**（`~/.cargo/bin`，需 `source ~/.cargo/env`）；npm registry / crates.io / rustup 均可达
-- 策略：Electron 分支保留 + 双轨并行，任何时刻有可回退版本
+### 阶段 B（✅ 已完成，2026-10-12 投产）
+- **Tauri v2 + Rust hidapi 桥落地**：`NativeHidTransport` 实现既有 `HidTransport` 接口的 `'nodehid'` 预留位，`src/core/hid/index.ts` 工厂激活
+- **体积结果**：Tauri .app **3.5M**（−98.8% vs Electron 288M），dmg 2.5M（自定义 dmgbuild 安装界面）；前端代码零改动
+- DoD 五关全过：R1 真机探针绿、NativeHidTransport+hid.rs 帧级等价 diff、feature-report 往返、Tauri build+启动 secure context 正常、真机配置写读往返
+- 真机 bug 修复（阶段 B 后）：固件回读撒谎 → ConfigCache 本地缓存优先 + distrust 持久化；关窗 onCloseRequested 落盘 + 重连 reconcileFromCache 对账下发
+- 键码字典：实证目标固件协议 v12 但用 QMK v9 新编码（0x5221=MO(1)），KeycodeFormatter 已加 v9 兜底
+- 平台覆盖：macOS arm64（x64 macOS / Windows / 签名公证见 Backlog）
 
 ### Backlog
-1. `src/core/device/ValueWidth.ts:123-145` 死代码 `verifyWrite()` 仍含 alt 重写逻辑（无生产调用方），删除防误用复活
-2. mid-connect 意外断连终态 'error' 而非 'lost'（低严重度）
-3. 快捷键"输入框聚焦不抢键"无自动化测试（需引入 jsdom，环境决策）
-4. P2 字号批次：~55 处散落 `text-[10px]/[11px]/[12px]` 收敛（连带键码网格密度/按钮高度，独立批次）
-5. Linux 分发 target（AppImage/deb + udev 说明）
-6. 阶段 B 完成后的 Electron 分支去留决策
+1. mid-connect 意外断连终态 'error' 而非 'lost'（低严重度）
+2. 快捷键「输入框聚焦不抢键」无自动化测试（需引入 jsdom，环境决策）
+3. P2 字号批次：~55 处散落 `text-[10px]/[11px]/[12px]` 收敛（连带键码网格密度/按钮高度，独立批次）
+4. Linux 分发 target（AppImage/deb + udev 说明）
+5. ~~verifyWrite 死代码删除~~（✅ 2026-10-12 已删，含 alt 宽度重写隐患，防误用复活）
+6. ~~eslint 悬空~~（✅ 2026-10-12 已删悬空 `lint` 脚本；后续如需 lint 再装 eslint + flat config）
+7. ~~Lite 残留 Electron 死配置~~（✅ 2026-10-12 已清：package.json 的 main/electron:dev/electron:build/build 块/optionalDependencies + `electron/` 目录 + `scripts/after-sign.mjs`，git 历史可恢复）
+8. Lite 平台覆盖：x64 macOS、Windows（hidapi 桥通用，主要回归 WebView2 行为）；Developer ID 签名 + 公证
+9. 协议键码 Bug C（战略层，待议）：QMK v9 中 MOD_TAP 由 0x6000 迁至 0x2000，需真机实证后补齐 media/lighting/quantum/macro 键码组
+10. 抽 `DeviceProtocol` 接口使 VIA 成为协议实现之一（「静电容优先」战略前置）
+
 
 ## 4. 用户待办
 
-1. **真机复测滑块**：`release/KeyDriver.app`（289M，18:28 构建含全部滑块修复）——拖 Brightness / Effect Speed 预期：数值跟手、切面板不回 0、双开时第二实例秒退并聚焦已有窗口
-2. **阶段 B 开工时配合 R1 探针**：插上 Em60 键盘跑探针脚本（待创建，一条命令），这是阶段 B 唯一硬门槛
+1. **真机复测**：Tauri Lite（3.5M）为主力版本——改键/滑块/主题/键位测试全链路；发现回读异常时点「从设备重新读取」按钮
+2. ~~阶段 B 开工时配合 R1 探针~~（✅ 已完成，探针 PASS）
 
 ## 5. 关键教训（踩坑实录）
 
