@@ -3,8 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "main": "electron/main.cjs",
-  "description": "跨平台键盘驱动 GUI：读取 VIA 定义文件，可视化改键与自定义菜单配置",
+  "description": "跨平台键盘驱动 GUI（Tauri 精简版）：读取 VIA 定义文件，可视化改键与自定义菜单配置",
   "sideEffects": [
     "*.css"
   ],
@@ -18,12 +17,7 @@
     "smoke": "vitest run scripts/smoke.test.ts",
     "check": "node scripts/check-no-hardcode.mjs && node scripts/codemod-spacing.mjs && node scripts/verify-definition-stats.mjs definitions/7-19-Em60_cn.json && tsc --noEmit",
     "format": "prettier --write \"src/**/*.{ts,tsx}\" \"scripts/**/*.{ts,mjs}\"",
-    "lint": "eslint src --ext .ts,.tsx",
-    "electron:dev": "electron .",
     "dev:app": "node scripts/dev-app.mjs",
-    "electron:build": "npm run build && electron-builder",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder",
     "app": "npm run build && node scripts/make-app.mjs"
   },
   "dependencies": {
@@ -53,45 +47,9 @@
     "@types/react-dom": "^19.3.0",
     "@types/w3c-web-hid": "^1.0.7",
     "@vitejs/plugin-react": "^5.2.0",
-    "electron-builder": "^26.0.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~5.9.3",
     "vite": "^7.3.7",
     "vitest": "^3.2.4"
-  },
-  "optionalDependencies": {
-    "electron": "^44.7.0"
-  },
-  "build": {
-    "appId": "com.keydriver.lite",
-    "productName": "KeyDriver Lite",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*"
-    ],
-    "afterSign": "scripts/after-sign.mjs",
-    "electronLanguages": [
-      "en",
-      "zh"
-    ],
-    "mac": {
-      "target": [
-        "dmg"
-      ],
-      "category": "public.app-category.utilities",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "forceCodeSigning": false
-    },
-    "win": {
-      "target": [
-        "nsis"
-      ],
-      "artifactName": "${productName}-${version}-setup.${ext}"
-    },
-    "asar": true
   }
 }

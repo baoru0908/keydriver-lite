@@ -1,6 +1,6 @@
 // 值宽度推断单测：覆盖 255 / 1000 / 1023 三种边界与覆盖表（架构 §8.3 / F5 / Q3）。
 import { describe, expect, it } from 'vitest';
-import { inferWidth, loadOverrides, saveOverride, verifyWrite } from '@/core/protocol/ValueWidth';
+import { inferWidth, loadOverrides, saveOverride } from '@/core/protocol/ValueWidth';
 import { makeAddress } from '@/core/protocol/CustomValueCodec';
 import type { ControlSpec } from '@/definition/schema';
 
@@ -78,43 +78,3 @@ describe('ValueWidth · 覆盖表', () => {
   });
 });
 
-describe('ValueWidth · 回读自校验', () => {
-  const address = makeAddress(6, 2, [1]);
-
-  it('一致时返回 ok', async () => {
-    const io = {
-      customGetValue: async () => 500,
-      customSetValue: async () => undefined,
-    };
-    const result = await verifyWrite(io, address, 500, 2);
-    expect(result.ok).toBe(true);
-    expect(result.readBack).toBe(500);
-  });
-
-  it('不一致且换宽度成功后给出建议宽度', async () => {
-    let usedWidth = 2;
-    const io = {
-      customGetValue: async (_a: typeof address, width: number) => (width === 1 ? 300 : 0),
-      customSetValue: async (_a: typeof address, _v: number, width: number) => {
-        usedWidth = width;
-      },
-    };
-    const result = await verifyWrite(io, address, 300, 2);
-    expect(result.ok).toBe(false);
-    expect(result.suggestedWidth).toBe(1);
-    expect(usedWidth).toBe(1);
-  });
-
-  it('异常被吞掉并返回失败（不抛到 UI）', async () => {
-    const io = {
-      customGetValue: async () => {
-        throw new Error('设备断开');
-      },
-      customSetValue: async () => {
-        throw new Error('设备断开');
-      },
-    };
-    const result = await verifyWrite(io, address, 1, 1);
-    expect(result.ok).toBe(false);
-  });
-});

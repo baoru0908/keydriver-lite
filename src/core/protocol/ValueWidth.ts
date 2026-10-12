@@ -116,31 +116,3 @@ export function describeWidth(control: ControlSpec, overrides: WidthOverrides = 
     overrides[key] !== undefined ? '手动覆盖（地址）' : overrides[control.valueKey] !== undefined ? '手动覆盖（变量名）' : '自动推断';
   return `${w} 字节 · ${source}`;
 }
-
-/**
- * 写后回读自校验：不一致时自动换用另一宽度重试一次（1↔2），成功则给出建议宽度。
- * 不抛异常——失败只记录，交由调用方记入调试面板（架构 §8.8）。
- */
-export async function verifyWrite(
-  io: ValueIo,
-  addr: ValueAddress,
-  value: number,
-  width: number,
-): Promise<VerifyResult> {
-  try {
-    await io.customSetValue(addr, value, width);
-    const readBack = await io.customGetValue(addr, width);
-    if (readBack === (value >>> 0)) {
-      return { ok: true, width, readBack };
-    }
-    const alt: number = width === 1 ? 2 : 1;
-    await io.customSetValue(addr, value, alt);
-    const altRead = await io.customGetValue(addr, alt);
-    if (altRead === (value >>> 0)) {
-      return { ok: false, width, readBack, suggestedWidth: alt };
-    }
-    return { ok: false, width, readBack };
-  } catch {
-    return { ok: false, width, readBack: -1 };
-  }
-}

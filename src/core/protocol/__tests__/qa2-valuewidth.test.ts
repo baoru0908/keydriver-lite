@@ -1,6 +1,6 @@
 // QA2 高危点 1：值宽度推断必须与 min 完全解耦，且手工覆盖表优先于推断规则。
 // 断言基线取自目标定义文件的实测统计（不重新推导）。
-// 注：与 qa-valuewidth.test.ts 为同主题的两份独立验证，本文件侧重「min 解耦 + 覆盖表优先级 + 持久化 + 回读自校验」。
+// 注：与 qa-valuewidth.test.ts 为同主题的两份独立验证，本文件侧重「min 解耦 + 覆盖表优先级 + 持久化」。
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadRealParsedDefinition } from '@/definition/__tests__/fixtures/realDefinition';
 import {
@@ -8,8 +8,6 @@ import {
   inferWidth,
   loadOverrides,
   saveOverride,
-  verifyWrite,
-  type ValueIo,
   type WidthOverrides,
 } from '@/core/protocol/ValueWidth';
 import { addressKey } from '@/core/protocol/CustomValueCodec';
@@ -286,55 +284,5 @@ describe('QA2-1 覆盖表持久化（loadOverrides / saveOverride / clearOverrid
     clearOverrides();
     expect(loadOverrides()).toEqual({});
     expect(inferWidth(c)).toBe(1);
-  });
-});
-
-describe('QA2-1 写后回读自校验 verifyWrite', () => {
-  const addr = { channel: 0, valueId: 1, indexes: [], key: '0:1:' } as const;
-
-  it('回读一致时 ok=true 并保留原宽度', async () => {
-    const io: ValueIo = {
-      customSetValue: async () => undefined,
-      customGetValue: async () => 200,
-    };
-    await expect(verifyWrite(io, addr, 200, 1)).resolves.toEqual({ ok: true, width: 1, readBack: 200 });
-  });
-
-  it('回读不一致时换用另一宽度重试；成功则给出 suggestedWidth', async () => {
-    let lastWidth = 0;
-    const io: ValueIo = {
-      customSetValue: async (_a, _v, w) => {
-        lastWidth = w;
-      },
-      // 1 字节回读被截断为 0xE8，2 字节才能读回 1000
-      customGetValue: async (_a, w) => (w === 2 ? 1000 : 0xe8),
-    };
-    const r = await verifyWrite(io, addr, 1000, 1);
-    expect(r.ok).toBe(false);
-    expect(r.width).toBe(1);
-    expect(r.readBack).toBe(0xe8);
-    expect(r.suggestedWidth).toBe(2);
-    expect(lastWidth).toBe(2);
-  });
-
-  it('两种宽度都回读不一致时不给建议宽度', async () => {
-    const io: ValueIo = {
-      customSetValue: async () => undefined,
-      customGetValue: async () => 7,
-    };
-    const r = await verifyWrite(io, addr, 1000, 1);
-    expect(r.ok).toBe(false);
-    expect(r.suggestedWidth).toBeUndefined();
-    expect(r.readBack).toBe(7);
-  });
-
-  it('底层抛异常时不向上冒泡，返回 readBack=-1', async () => {
-    const io: ValueIo = {
-      customSetValue: async () => {
-        throw new Error('设备已断开');
-      },
-      customGetValue: async () => 0,
-    };
-    await expect(verifyWrite(io, addr, 1, 1)).resolves.toEqual({ ok: false, width: 1, readBack: -1 });
   });
 });
