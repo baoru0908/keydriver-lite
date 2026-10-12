@@ -59,6 +59,8 @@ export function ThemeSwitch(): React.JSX.Element {
   const [open, setOpen] = useState(false);
   /** 正在播放退场动画（此间菜单仍在 DOM 中，播完才卸载）。 */
   const [closing, setClosing] = useState(false);
+  /** 防止 pointerdown + click 双发（菜单进场动画移动 target 时 click 可能不合成）。 */
+  const selectingRef = useRef(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -100,8 +102,17 @@ export function ThemeSwitch(): React.JSX.Element {
     window.setTimeout(() => {
       setOpen(false);
       setClosing(false);
+      selectingRef.current = false;
       if (restoreFocus) triggerRef.current?.focus();
     }, 140);
+  };
+
+  /** pointerdown 即选中：绕过 click 合成对「down/up target 不一致」的拒绝。 */
+  const handleSelect = (value: ThemePreference): void => {
+    if (selectingRef.current) return;
+    selectingRef.current = true;
+    setPreference(value);
+    close();
   };
 
   const onTriggerKeyDown = (e: React.KeyboardEvent): void => {
@@ -113,6 +124,12 @@ export function ThemeSwitch(): React.JSX.Element {
   };
 
   const onMenuKeyDown = (e: React.KeyboardEvent, index: number): void => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      const option = OPTIONS[index];
+      if (option) handleSelect(option.value);
+      return;
+    }
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       itemRefs.current[(index + 1) % OPTIONS.length]?.focus();
@@ -182,9 +199,13 @@ export function ThemeSwitch(): React.JSX.Element {
                 type="button"
                 role="menuitemradio"
                 aria-checked={active}
-                onClick={() => {
-                  setPreference(option.value);
-                  close();
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  handleSelect(option.value);
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleSelect(option.value);
                 }}
                 onKeyDown={(e) => onMenuKeyDown(e, index)}
                 className={cn(
