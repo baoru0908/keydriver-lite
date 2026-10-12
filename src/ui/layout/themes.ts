@@ -12,6 +12,7 @@ export type ThemeMode =
   | 'light'
   | 'aurora'
   | 'nothing'
+  | 'nothing-light'
   | 'cyber'
   | 'chiikawa'
   | 'matcha'
@@ -61,6 +62,13 @@ export const THEME_PRESETS: readonly ThemePreset[] = [
     hint: '暖棕奶调 · 低饱和耐看',
     scheme: 'light',
     swatch: ['#f7f1e8', '#f3e3d2', '#8f5a33'],
+  },
+  {
+    id: 'nothing-light',
+    label: 'Nothing 浅',
+    hint: '白底点阵 · 直角硬边红点',
+    scheme: 'light',
+    swatch: ['#ffffff', '#f4f4f5', '#ff3b30'],
   },
   // —— 深色组 ——
   {

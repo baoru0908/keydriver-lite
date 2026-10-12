@@ -176,6 +176,12 @@ export interface KleKey {
   readonly h2: number;
   readonly color: string;
   readonly decal: boolean;
+  /**
+   * KLE 原始标签，按 '\n' 分割后的数组。
+   * KLE 约定：第 0 项是主标签（键帽正面），第 1 项常为 shift / Fn 层标签。
+   * 若定义文件未提供标签（如纯矩阵坐标 "0,0"），数组为空。
+   */
+  readonly labels: readonly string[];
   /** 像素矩形（UNIT=54, GAP=4） */
   readonly rect: Rect;
   readonly rect2?: Rect;

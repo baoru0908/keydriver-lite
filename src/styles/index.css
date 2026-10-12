@@ -521,11 +521,12 @@ html.theme-aurora {
   }
 }
 
-/* 键帽渐变的通用 class：按 tone 分档（架构 §8.6 三档映射） */
+/* 键帽通用 class：按 tone 分档着色，简洁真实键帽质感（架构 §8.6 三档映射） */
 @utility keycap-base {
+  border: 1px solid var(--color-border-strong);
   box-shadow:
-    inset 0 -2px 0 rgb(0 0 0 / 0.18),
-    0 1px 2px rgb(0 0 0 / 0.25);
+    inset 0 1px 0 0 var(--color-hairline),
+    0 1px 2px rgb(0 0 0 / 0.18);
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -873,7 +874,38 @@ html.theme-milk {
   --radius-key: 9px;
 }
 
-/* ── Nothing：纯黑点阵，零模糊、直角、红色点缀（硬派极简）───────────────── */
+/* ══════════════════════════════════════════════════════════════════════════
+ * Nothing 系列共享视觉语言（深 / 浅同源）
+ *
+ * 不只是深浅反色——点阵纹理、等宽工程字体、硬边直角图标、1px 精确边框、克制红点，
+ * 共同构成 Nothing 的「透明 / 像素化 / 工业精密」三母题（nothing.wiki 品牌参考）。
+ * 两个 Nothing 主题只反转底色与文字，其余语言完全统一。
+ * ══════════════════════════════════════════════════════════════════════════ */
+html.theme-nothing,
+html.theme-nothing-light {
+  /* 点阵母题：默认深版亮点；浅版在各自段覆盖为暗点 */
+  --nothing-dot: rgb(255 255 255 / 0.045);
+}
+
+html.theme-nothing body,
+html.theme-nothing-light body {
+  /* Lettera Mono LL 的本地替代：等宽工程字体栈（中文回落系统字），终端 / 工业观感 */
+  font-family: ui-monospace, 'JetBrains Mono', 'SFMono-Regular', Menlo, 'PingFang SC', 'Microsoft YaHei', monospace;
+  letter-spacing: -0.01em;
+  /* 点阵背景：machined 规则圆点（Nothing 像素化母题），而非手绘纹理 */
+  background-image: radial-gradient(var(--nothing-dot) 1.4px, transparent 1.4px);
+  background-size: 16px 16px;
+}
+
+html.theme-nothing svg.lucide,
+html.theme-nothing-light svg.lucide {
+  /* 图标硬边化：方形端点 + 直角连接 + 略粗描边 → 1-bit 工业感，统一图标设计语言 */
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  stroke-width: 1.9;
+}
+
+/* ── Nothing（深）：纯黑点阵，零模糊、直角、红色 Glyph 点缀（硬派极简）────────── */
 html.theme-nothing {
   --color-bg: #000000;
   --color-surface: #0a0a0a;
@@ -915,6 +947,59 @@ html.theme-nothing {
   --color-glow-danger: rgb(255 69 58 / 0.28);
   --shadow-glow: 0 0 0 1px rgb(255 59 48 / 0.3), 0 8px 22px -10px var(--color-glow-accent);
   --shadow-glow-danger: 0 0 0 1px rgb(255 69 58 / 0.3), 0 8px 22px -10px var(--color-glow-danger);
+  --shadow-inset-hl: inset 0 1px 0 0 var(--color-hairline);
+
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-card: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-key: 3px;
+}
+
+/* ── Nothing（浅）：白底点阵，直角硬边、1px 精确灰框、克制红点（与深版同源语言）── */
+html.theme-nothing-light {
+  --color-bg: #ffffff;
+  --color-surface: #fafafa;
+  --color-panel: #f4f4f5;
+  --color-elevated: #ffffff;
+  --color-border: #e5e7eb;
+  --color-border-strong: #c9ccd1;
+  --color-fg: #0a0a0a;
+  --color-fg-muted: #585a5a;
+  --color-fg-dim: #8b8d8f;
+  --color-accent: #ff3b30;
+  --color-accent-strong: #d92d24;
+  --color-accent-soft: #ffe9e7;
+  --color-danger: #d92d24;
+  --color-danger-soft: #ffe9e7;
+  --color-warn: #b8870a;
+  --color-warn-soft: #fbf3df;
+  --color-success: #1f8a4c;
+  --color-success-soft: #e6f5ec;
+  --color-info: #3a6ea5;
+  --color-info-soft: #eaf1f8;
+  --color-key-base: #f4f4f5;
+  --color-key-mod: #e9eaec;
+  --color-key-accent: #dedfe2;
+  --color-key-special: #fafafa;
+
+  --shadow-e1: 0 1px 2px rgb(16 16 16 / 0.06);
+  --shadow-e2: 0 2px 8px rgb(16 16 16 / 0.08);
+  --shadow-e3: 0 12px 32px rgb(16 16 16 / 0.1);
+  --shadow-e4: 0 24px 64px rgb(16 16 16 / 0.12);
+
+  /* 浅版点阵：暗点在白底（与深版反向，但图案同源） */
+  --nothing-dot: rgb(0 0 0 / 0.05);
+  --color-glass-bg: rgb(0 0 0 / 0.02);
+  --color-glass-bg-strong: rgb(0 0 0 / 0.035);
+  --color-glass-border: rgb(10 10 10 / 0.08);
+  --color-hairline: rgb(255 255 255 / 0.9);
+  --blur-glass: 0px;
+  --color-glow-accent: rgb(255 59 48 / 0.26);
+  --color-glow-danger: rgb(217 45 36 / 0.22);
+  --shadow-glow: 0 0 0 1px rgb(255 59 48 / 0.22), 0 8px 22px -10px var(--color-glow-accent);
+  --shadow-glow-danger: 0 0 0 1px rgb(217 45 36 / 0.22), 0 8px 22px -10px var(--color-glow-danger);
   --shadow-inset-hl: inset 0 1px 0 0 var(--color-hairline);
 
   --radius-xs: 2px;

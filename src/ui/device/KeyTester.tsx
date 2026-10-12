@@ -5,6 +5,10 @@
 // 本阶段传输层只实现 VIA，因此本组件先用 window 的 keydown/keyup 捕捉本机键盘做演示，
 // 以便立刻验证高亮交互。
 //
+// 匹配策略：不按“键帽标签字符串”做模糊匹配（方向键 ←/↑/↓/→ 等会被 normalize 成空串），
+// 而是按 QMK 基础键码 → KeyboardEvent.code 的物理位置映射。只有基础 HID 键码能对应
+// 真实物理键；层操作 / Mod-Tap / Custom 等无固定物理键，不参与高亮。
+//
 // TODO(Alex): 接真机时应改走设备的 HID 键盘报告——由传输层把键盘报文解析为
 // (code, down/up) 事件后喂给 useKeyTester（当前 useKeyTester 只认 KeyboardEvent.code）。
 // 该真实 HID 键盘监听是独立路径，不在本阶段实装（避免引入第二条 HID 接口监听）。
@@ -12,7 +16,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDefinitionStore } from '@/store/useDefinitionStore';
 import { useKeymapStore, selectKeycode } from '@/store/useKeymapStore';
 import { boundingBox, fitScale } from '@/definition/KleGeometry';
-import { formatKeycap } from '@/keycodes/KeycodeFormatter';
+import { format, formatKeycap } from '@/keycodes/KeycodeFormatter';
+import { keycodeToEventCode } from '@/keycodes/HidCodeMap';
 import { cn } from '@/shared/cn';
 
 /**
@@ -46,16 +51,16 @@ const CODE_LABELS: Readonly<Record<string, string>> = {
   // 功能键
   F1: 'F1', F2: 'F2', F3: 'F3', F4: 'F4', F5: 'F5', F6: 'F6',
   F7: 'F7', F8: 'F8', F9: 'F9', F10: 'F10', F11: 'F11', F12: 'F12',
+  // 小键盘
+  NumLock: 'NumLk', NumpadDivide: 'Num /', NumpadMultiply: 'Num *', NumpadSubtract: 'Num -',
+  NumpadAdd: 'Num +', NumpadEnter: 'Num ↵', NumpadDecimal: 'Num .', NumpadEqual: 'Num =',
+  Numpad0: 'Num 0', Numpad1: 'Num 1', Numpad2: 'Num 2', Numpad3: 'Num 3', Numpad4: 'Num 4',
+  Numpad5: 'Num 5', Numpad6: 'Num 6', Numpad7: 'Num 7', Numpad8: 'Num 8', Numpad9: 'Num 9',
 };
 
 /** 取可读标签；无映射时退回原始 code，保证总能显示。 */
 function readableLabel(code: string): string {
   return CODE_LABELS[code] ?? code;
-}
-
-/** 归一化：转小写并去掉非字母数字，便于「按下键」与「键帽标签」宽松匹配。 */
-function normalize(token: string): string {
-  return token.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 export interface KeyTesterState {
@@ -116,15 +121,8 @@ export function KeyTester(): React.JSX.Element {
   const box = useMemo(() => boundingBox(keys), [keys]);
   const scale = containerWidth > 0 ? fitScale(box.width, containerWidth) : 1;
 
-  // 把当前按下的键归一化成可比较集合（与键帽标签做宽松匹配）。
-  const pressedCanon = useMemo(() => {
-    const set = new Set<string>();
-    for (const code of pressedList) {
-      const c = normalize(readableLabel(code));
-      if (c) set.add(c);
-    }
-    return set;
-  }, [pressedList]);
+  // 当前按下的 KeyboardEvent.code 集合。
+  const pressedCodes = useMemo(() => new Set(pressedList), [pressedList]);
 
   return (
     <section className="rounded-card border border-border bg-surface p-4">
@@ -162,8 +160,9 @@ export function KeyTester(): React.JSX.Element {
                   key.matrix.row,
                   key.matrix.col,
                 );
+                const expectedCode = keycodeToEventCode(keycode);
+                const active = expectedCode !== undefined && pressedCodes.has(expectedCode);
                 const label = formatKeycap(keycode)[0] ?? '';
-                const active = pressedCanon.has(normalize(label));
                 return (
                   <div
                     key={`${key.matrix.row},${key.matrix.col}`}
@@ -180,7 +179,7 @@ export function KeyTester(): React.JSX.Element {
                       width: key.rect.w * scale,
                       height: key.rect.h * scale,
                     }}
-                    title={`矩阵 (${key.matrix.row},${key.matrix.col})`}
+                    title={`${format(keycode)} · 矩阵 (${key.matrix.row},${key.matrix.col})`}
                   >
                     <span className="px-0.5 text-center">{label}</span>
                   </div>

@@ -1,6 +1,6 @@
-// 单键渲染：主/副矩形（w2/h2）、c 色三档映射、选中态、键码显示名、decal 态。
+// 单键渲染：优先采用 KLE 原始标签，fallback 键码表；shift 副字符右上角小字。
 import type { KleKey } from '@/definition/schema';
-import { formatKeycap } from '@/keycodes/KeycodeFormatter';
+import { format, formatKeycap, getShiftPair } from '@/keycodes/KeycodeFormatter';
 import { cn } from '@/shared/cn';
 
 export interface KeyWidgetProps {
@@ -21,6 +21,46 @@ const TONE_CLASS = {
   special: 'bg-key-special text-fg-muted',
 } as const;
 
+interface KeycapLabels {
+  readonly main: string;
+  readonly sub?: string;
+}
+
+/** KLE 标签看起来是占位符（如 DF(..) / 0x00..）而非真实印字。 */
+function isPlaceholderLabel(text: string): boolean {
+  const t = text.trim();
+  if (t === '' || t === '...' || t === '..') return true;
+  // 被截断的函数式或编码：包含 "..)" / "..]" / "0x.." 等
+  if (/\.\.[)\]]/.test(t)) return true;
+  if (/^0x[0-9a-fA-F]+\.\.?$/.test(t)) return true;
+  return false;
+}
+
+/** 双字符键帽优先用 KLE 标签；KLE 只有主字符时，尝试用 ANSI shift 配对补副字符。 */
+function deriveLabels(kleKey: KleKey, keycode: number): KeycapLabels {
+  const mainLabel = kleKey.labels[0];
+  const hasRealKle = typeof mainLabel === 'string' && !isPlaceholderLabel(mainLabel);
+
+  if (hasRealKle) {
+    const main = mainLabel;
+    const sub = kleKey.labels[1];
+    if (sub) return { main, sub };
+    if (!kleKey.decal) {
+      const pair = getShiftPair(keycode);
+      if (pair && pair.main === main) return { main, sub: pair.shift };
+    }
+    return { main };
+  }
+
+  const pair = !kleKey.decal ? getShiftPair(keycode) : undefined;
+  if (pair) return { main: pair.main, sub: pair.shift };
+
+  const lines = formatKeycap(keycode);
+  return lines.length > 1
+    ? { main: lines[0] ?? '', sub: lines[1] }
+    : { main: lines[0] ?? '' };
+}
+
 export function KeyWidget({
   kleKey,
   keycode,
@@ -31,7 +71,8 @@ export function KeyWidget({
   originY = 0,
 }: KeyWidgetProps): React.JSX.Element {
   const { rect, rect2, decal } = kleKey;
-  const lines = formatKeycap(keycode);
+  const { main, sub } = deriveLabels(kleKey, keycode);
+  const isWide = kleKey.w > 1.25;
 
   const styleOf = (r: { x: number; y: number; w: number; h: number }): React.CSSProperties => ({
     left: (r.x - originX) * scale,
@@ -41,12 +82,14 @@ export function KeyWidget({
   });
 
   const base = cn(
-    'absolute flex flex-col items-center justify-center overflow-hidden rounded-key border text-[10px] leading-tight transition-colors',
-    'border-black/25 keycap-base',
-    selected ? 'ring-2 ring-accent' : 'hover:brightness-110',
-    // 装饰键也要带 tone 底色：keycap-base 只有 box-shadow，没有底色，
-    // 去掉 tone 后装饰键会变成「透明空洞」，被误读成键位图缺键。
-    decal ? cn('opacity-60', TONE_CLASS[kleKey.tone]) : TONE_CLASS[kleKey.tone],
+    'absolute flex items-center overflow-hidden rounded-key transition-colors',
+    'text-[11px] font-semibold tracking-tight leading-none',
+    TONE_CLASS[kleKey.tone],
+    selected
+      ? 'ring-2 ring-accent z-10 brightness-110'
+      : 'hover:brightness-110',
+    // 装饰键也要有底色，避免在键位图上形成「缺键」空洞。
+    decal && 'opacity-60',
   );
 
   return (
@@ -56,19 +99,36 @@ export function KeyWidget({
       ) : null}
       <button
         type="button"
-        className={base}
+        className={cn(base, 'keycap-base')}
         style={styleOf(rect)}
         onClick={onSelect}
-        title={`矩阵 (${kleKey.matrix.row},${kleKey.matrix.col})`}
-        aria-label={decal ? `装饰键 矩阵 (${kleKey.matrix.row},${kleKey.matrix.col})` : undefined}
+        title={`${format(keycode)} · 矩阵 (${kleKey.matrix.row},${kleKey.matrix.col})`}
+        aria-label={
+          decal
+            ? `装饰键 ${format(keycode)} · 矩阵 (${kleKey.matrix.row},${kleKey.matrix.col})`
+            : `${format(keycode)} · 矩阵 (${kleKey.matrix.row},${kleKey.matrix.col})`
+        }
       >
-        {decal ? null : (
-          <span className="flex flex-col items-center px-0.5 text-center">
-            {lines.map((line, i) => (
-              <span key={i} className="max-w-full truncate">
-                {line}
-              </span>
-            ))}
+        {decal ? null : sub ? (
+          <span
+            className={cn(
+              'relative flex h-full w-full items-center px-1',
+              isWide ? 'justify-start' : 'justify-center',
+            )}
+          >
+            <span className="absolute top-1 right-1 text-[8px] font-medium opacity-80">
+              {sub}
+            </span>
+            <span className="max-w-full truncate">{main}</span>
+          </span>
+        ) : (
+          <span
+            className={cn(
+              'max-w-full truncate px-1',
+              isWide ? 'text-left' : 'text-center',
+            )}
+          >
+            {main}
           </span>
         )}
       </button>

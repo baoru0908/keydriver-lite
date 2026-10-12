@@ -108,7 +108,27 @@ export function computeKeys(rows: readonly KleRow[]): KleKey[] {
         decal = props.d === undefined ? false : Boolean(props.d);
         continue;
       }
-      const name = parseKeyName(String(item as KleItem));
+      const rawText = String(item as KleItem);
+      const name = parseKeyName(rawText);
+      // KLE 标签：去掉矩阵坐标 / 布局选项元数据后的可见文本。
+      // 格式 ① "row,col"                → 无可见标签
+      // 格式 ② "row,col\n主标签"         → 主标签
+      // 格式 ③ "row,col\n\n\ngroup,option\n主标签\n次标签" → 主/次标签
+      // 格式 ④ "主标签"（无矩阵元数据） → 整段都是标签
+      const labelParts = rawText.split('\n');
+      const hasMatrix = /^\d+,\d+$/.test(labelParts[0] ?? '');
+      let labelStart = 0;
+      if (hasMatrix) {
+        // KLE 元数据格式：
+        //   行 0: "row,col" 矩阵坐标
+        //   行 1-2: 空行（保留给主/副印字上方的 KLE 特殊位置）
+        //   行 3: "group,option" 布局选项条件（可选）
+        //   行 4+: 真实可见标签
+        // 只要第 3 行存在且是 "g,o" 格式，就视为有布局选项；真实标签从第 4 行开始。
+        const hasLayoutOption = labelParts.length >= 4 && /^\d+,\d+$/.test(labelParts[3] ?? '');
+        labelStart = hasLayoutOption ? 4 : 1;
+      }
+      const labels = labelParts.slice(labelStart).filter((s) => s !== '');
       const key = {
         matrix: name.matrix,
         group: name.group,
@@ -123,6 +143,7 @@ export function computeKeys(rows: readonly KleRow[]): KleKey[] {
         h2: h2 ?? h,
         color,
         decal,
+        labels,
       };
       out.push({
         ...key,
