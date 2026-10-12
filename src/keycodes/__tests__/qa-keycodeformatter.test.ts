@@ -69,6 +69,38 @@ describe('QA · 各键码页的归属判定', () => {
   });
 });
 
+describe('QA · QMK v9 新编码兜底（keycodes_0.0.1.hjson）', () => {
+  // 实证：目标固件协议 v12 但使用 v9 键码字典（真机日志 0x04 逐键读）。
+  // v9 层操作页 0x20 步进：TO=0x5200|n, MO=0x5220|n, DF=0x5240|n, TG=0x5260|n …
+  // 旧编码下 0x52xx 低 8 位 ≥ 0x20 为非法层号（QMK 上限 16 层），可无歧义按 v9 解析。
+  it('0x5221/0x5222 按 v9 解析为 MO(1)/MO(2)（真机：右下角 Fn 键）', () => {
+    expect(parseKeycode(0x5221)).toMatchObject({ kind: 'layer', prefix: 'MO', param: 1 });
+    expect(format(0x5221)).toBe('MO(1)');
+    expect(parseKeycode(0x5222)).toMatchObject({ kind: 'layer', prefix: 'MO', param: 2 });
+  });
+
+  it('v9 各层操作基址都能解出', () => {
+    // 0x5200-0x521F 与旧 DF 页重叠（真歧义），保守保持旧解析 DF(n)
+    expect(format(0x5203)).toBe('DF(3)');
+    expect(format(0x5241)).toBe('DF(1)');
+    expect(format(0x5262)).toBe('TG(2)');
+    expect(format(0x5283)).toBe('OSL(3)');
+    expect(format(0x52c4)).toBe('TT(4)');
+  });
+
+  it('旧编码合法值不受影响（MO(3)=0x5103 仍走精确表）', () => {
+    expect(parseKeycode(0x5103).prefix).toBe('MO(3)');
+  });
+
+  it('v9 的 QK_QUANTUM 基址 0x7C00 显示为 QK_BOOT', () => {
+    expect(format(0x7c00)).toBe('QK_BOOT');
+  });
+
+  it('HID Keyboard Menu (0x76) 有可读名', () => {
+    expect(format(0x0076)).toBe('Menu');
+  });
+});
+
 // 【QA 缺陷候选】两条独立成因都会把 Quantum 页（0x7100/0x7200/0x7400/0x7800…）的键码
 // 显示成 Mod-Tap：
 //   ① KeycodeTable 注册了 MT(mod, 0) 作为 8 个 Mod-Tap 条目的基准码，

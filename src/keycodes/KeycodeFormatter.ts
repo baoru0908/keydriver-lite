@@ -31,6 +31,17 @@ function innerName(inner: number): string {
   return toHex16Short(inner);
 }
 
+/** v9 层操作页基址（keycodes_0.0.1.hjson：每类 0x20 空间，层号 5 位）。 */
+const V9_LAYER_BASES: readonly { readonly base: number; readonly prefix: string }[] = [
+  { base: 0x5200, prefix: 'TO' },
+  { base: 0x5220, prefix: 'MO' },
+  { base: 0x5240, prefix: 'DF' },
+  { base: 0x5260, prefix: 'TG' },
+  { base: 0x5280, prefix: 'OSL' },
+  { base: 0x52a0, prefix: 'OSM' },
+  { base: 0x52c0, prefix: 'TT' },
+];
+
 /** 解析任意 16 位键码的结构（先精确表，再按页解析）。 */
 export function parseKeycode(keycode: number): ParsedKeycode {
   const kc = keycode & 0xffff;
@@ -76,6 +87,21 @@ export function parseKeycode(keycode: number): ParsedKeycode {
   }
 
   // 层操作页
+  // —— QMK v9 新编码兜底（keycodes_0.0.1.hjson）——
+  // v9 把层操作页改为 0x20 步进：TO=0x5200|n, MO=0x5220|n, DF=0x5240|n, TG=0x5260|n,
+  // OSL=0x5280|n, OSM=0x52A0|m, TT=0x52C0|n（层号仅 5 位，0–31）。
+  // 旧编码下 0x52xx 低 8 位 ≥ 0x20 的值对应 DF(32+)/DF(33+) 等非法层号（QMK 上限 16 层），
+  // 合法固件永不返回 → 该区间可无歧义按 v9 解析，无需依赖字典版本握手。
+  // 实证：目标固件协议 v12 但使用 v9 键码（0x5221 = MO(1)，VIA 同样显示 MO(1)）。
+  if (kc >= 0x5200 && kc < 0x5300 && (kc & 0xff) >= 0x20) {
+    const v9 = V9_LAYER_BASES.find((b) => kc >= b.base && kc < b.base + 0x20);
+    if (v9) return { kind: 'layer', prefix: v9.prefix, param: kc & 0x1f };
+  }
+  // v9 的 QK_QUANTUM 基址 0x7C00（QK_BOOTLOADER）；旧编码下 0x7C00 无定义。
+  if (kc === 0x7c00) {
+    return { kind: 'exact', prefix: 'QK_BOOT' };
+  }
+
   const layerPages: readonly { readonly page: number; readonly prefix: string }[] = [
     { page: QK_PAGE.TO, prefix: 'TO' },
     { page: QK_PAGE.MOMENTARY, prefix: 'MO' },
@@ -141,7 +167,43 @@ export function formatKeycap(keycode: number): string[] {
     if (keycode === 0x0001) return ['▽'];
     return [p.def?.short ?? p.def?.label ?? p.prefix];
   }
+  // 层操作键：主行显示前缀，右上角小字显示层号，避免括号挤在一行变成“DF(..)”
+  if (p.kind === 'layer' && p.param !== undefined) {
+    return [p.prefix, String(p.param)];
+  }
   return [formatShort(keycode)];
+}
+
+/** Shift 层配对：主字符 + 副字符。仅覆盖标准 ANSI 数字/符号行。 */
+const SHIFT_PAIR: Record<number, { main: string; shift: string }> = {
+  [0x0035]: { main: '`', shift: '~' }, // KC_GRV
+  [0x001e]: { main: '1', shift: '!' }, // KC_1
+  [0x001f]: { main: '2', shift: '@' }, // KC_2
+  [0x0020]: { main: '3', shift: '#' }, // KC_3
+  [0x0021]: { main: '4', shift: '$' }, // KC_4
+  [0x0022]: { main: '5', shift: '%' }, // KC_5
+  [0x0023]: { main: '6', shift: '^' }, // KC_6
+  [0x0024]: { main: '7', shift: '&' }, // KC_7
+  [0x0025]: { main: '8', shift: '*' }, // KC_8
+  [0x0026]: { main: '9', shift: '(' }, // KC_9
+  [0x0027]: { main: '0', shift: ')' }, // KC_0
+  [0x002d]: { main: '-', shift: '_' }, // KC_MINS
+  [0x002e]: { main: '=', shift: '+' }, // KC_EQL
+  [0x002f]: { main: '[', shift: '{' }, // KC_LBRC
+  [0x0030]: { main: ']', shift: '}' }, // KC_RBRC
+  [0x0031]: { main: '\\', shift: '|' }, // KC_BSLS
+  [0x0033]: { main: ';', shift: ':' }, // KC_SCLN
+  [0x0034]: { main: "'", shift: '"' }, // KC_QUOT
+  [0x0036]: { main: ',', shift: '<' }, // KC_COMM
+  [0x0037]: { main: '.', shift: '>' }, // KC_DOT
+  [0x0038]: { main: '/', shift: '?' }, // KC_SLSH
+};
+
+/** 取 keycode 的 shift 层配对；仅对基础 HID 键码有效，包装键码返回 undefined。 */
+export function getShiftPair(keycode: number): { main: string; shift: string } | undefined {
+  // 只处理基础键码（<= 0xff），避免 Mod-Tap/Layer-Tap 等包装键码被误配对
+  if (keycode > 0xff) return undefined;
+  return SHIFT_PAIR[keycode];
 }
 
 /** 是否为「特殊」键码（透明 / 禁用），UI 用不同底色标识。 */

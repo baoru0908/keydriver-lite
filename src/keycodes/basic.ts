@@ -126,8 +126,12 @@ const ROWS: readonly Row[] = [
   { code: 0x0067, name: 'KC_KP_EQUAL', label: 'Keypad =', short: 'Num =' },
 
   // 系统键
-  { code: 0x0065, name: 'KC_APP', label: 'Menu', short: 'Menu' },
+  { code: 0x0065, name: 'KC_APP', label: 'App', short: 'App' },
   { code: 0x0066, name: 'KC_PWR', label: 'Power', short: 'Pwr' },
+  { code: 0x0074, name: 'KC_EXEC', label: 'Execute', short: 'Exec' },
+  { code: 0x0075, name: 'KC_HELP', label: 'Help', short: 'Help' },
+  // HID Keyboard Menu (0x76)：VIA 显示为 Menu；与 0x65 Application 区分
+  { code: 0x0076, name: 'KC_MENU', label: 'Menu', short: 'Menu' },
   { code: 0x0082, name: 'KC_SLEP', label: 'Sleep', short: 'Sleep' },
   { code: 0x0083, name: 'KC_WAKE', label: 'Wake', short: 'Wake' },
 
